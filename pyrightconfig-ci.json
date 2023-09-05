@@ -1,0 +1,20 @@
+{
+  "typeCheckingMode": "strict",
+  "reportMissingParameterType": "none",
+  "reportMissingTypeArgument": "none",
+  "reportMissingTypeStubs": "none",
+  "reportPrivateUsage": "none",
+  "reportUnknownArgumentType": "none",
+  "reportUnknownLambdaType": "none",
+  "reportUnknownMemberType": "none",
+  "reportUnknownParameterType": "none",
+  "reportUnknownVariableType": "none",
+  "reportUntypedBaseClass": "none",
+  "reportUntypedClassDecorator": "none",
+  "reportUntypedFunctionDecorator": "none",
+  "reportUntypedNamedTuple": "none",
+  "reportUnusedVariable": "none",
+  "reportUnnecessaryTypeIgnoreComment": "error",
+  "reportIncompatibleVariableOverride": "none",
+  "reportIncompatibleMethodOverride": "none"
+}

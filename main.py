@@ -1,6 +1,32 @@
+"""
+This plugin is a "dependency", see https://packagecontrol.io/docs/dependencies.
+
+It does the following:
+
+- Installs and periodically upgrades Tree-sitter Python bindings, see https://github.com/tree-sitter/py-tree-sitter
+    - Importable by other plugins with `import tree_sitter`
+- Installs and builds TS languages, e.g. https://github.com/tree-sitter/tree-sitter-python, based on settings
+    - Updates languages on command
+- Provides APIs for:
+    - Getting TS tree by its buffer id
+    - Subscribing to tree changes in real time using `sublime_plugin.EventListener`
+    - Walking a tree, querying a tree, etc
+
+It's easy to build TS plugins on top of this one, for "structural" editing, selection, navigation, code folding, code
+maps… See e.g. https://zed.dev/blog/syntax-aware-editing for ideas. It's performant and never blocks the main thread.
+
+It has the following limitations:
+
+- It doesn't support nested syntax trees, e.g. `<script>` tags in HTML docs
+- Due to limitations in Sublime's bundled Python, it requires an external Python 3.8 executable (see settings)
+- Due to how syntax highlighting works in Sublime, it can't be used for syntax highlighting
+    - See e.g. https://github.com/sublimehq/sublime_text/issues/817
+"""
+
 from __future__ import annotations
 
 import subprocess
+import time
 from typing import Literal, Tuple, TypedDict, cast, get_args
 
 import sublime  # noqa: F401
@@ -18,19 +44,18 @@ PIP_PATH = "/Users/kyle/.pyenv/versions/3.8.13/bin/pip"
 # Code for installing tree sitter, and installing/building languages
 #
 
-# Note: `installed_languages` specified in settings, Python and a few others installed by default
-
 
 def install_tree_sitter(pip_path: str = PIP_PATH):
     subprocess.run([pip_path, "install", "--target", str(DEPS_PATH), "tree_sitter"], check=True)
 
 
-if False:
-    # TODO: speed up pip install check
-    install_tree_sitter()
-
+# Note: `installed_languages` specified in settings, Python and a few others installed by default
 add_path(str(DEPS_PATH))
-from tree_sitter import Language, Parser, Tree  # noqa
+try:
+    from tree_sitter import Language, Parser, Tree
+except ImportError:
+    install_tree_sitter()
+    from tree_sitter import Language, Parser, Tree
 
 
 def clone_language(language_repo: str):
@@ -108,6 +133,11 @@ def parse(parser: Parser, scope: ScopeType, s: str) -> Tree:
 
 class TreeDict(TypedDict):
     tree: Tree
+    updated_s: float
+
+
+def make_tree_dict(tree: Tree) -> TreeDict:
+    return {"tree": tree, "updated_s": time.monotonic()}
 
 
 def get_scope(view: View) -> ScopeType | None:
@@ -130,6 +160,22 @@ def publish_tree_update(window: sublime.Window | None, buffer_id: int, scope: st
     )
 
 
+MAX_CACHED_TREES = 32
+SCOPE_TO_LANGUAGE: dict[ScopeType, Language] = {}
+BUFFER_ID_TO_TREE: dict[int, TreeDict] = {}
+
+
+def trim_cached_trees(size: int = MAX_CACHED_TREES):
+    """
+    Note that trimming an item is O(N) in `MAX_CACHED_TREES`.
+
+    This is fast enough, and much easier than using heapq or similar to implement a sorted set.
+    """
+    while len(BUFFER_ID_TO_TREE) > MAX_CACHED_TREES:
+        _, buffer_id = min((d["updated_s"], buffer_id) for buffer_id, d in BUFFER_ID_TO_TREE.items())
+        BUFFER_ID_TO_TREE.pop(buffer_id, None)
+
+
 class TreeSitterUpdateTreeCommand(sublime_plugin.WindowCommand):
     """
     So client code can "subscribe" to tree updates with an `EventListener`. For example:
@@ -143,10 +189,6 @@ class TreeSitterUpdateTreeCommand(sublime_plugin.WindowCommand):
 
     def run(self, **kwargs):
         pass
-
-
-SCOPE_TO_LANGUAGE: dict[ScopeType, Language] = {}
-BUFFER_ID_TO_TREE: dict[int, TreeDict] = {}
 
 
 class TreeSitterEventListener(sublime_plugin.EventListener):
@@ -167,9 +209,10 @@ class TreeSitterEventListener(sublime_plugin.EventListener):
         buffer_id = view.buffer().id()
         tree = parse(self.parser, scope, s=view.substr(sublime.Region(0, view.size())))
 
-        BUFFER_ID_TO_TREE[buffer_id] = {"tree": tree}
+        BUFFER_ID_TO_TREE[buffer_id] = make_tree_dict(tree)
 
         publish_tree_update(view.window(), buffer_id=buffer_id, scope=scope)
+        trim_cached_trees()
 
     def on_load_async(self, view: View):
         self.handle_load(view)
@@ -225,7 +268,8 @@ class TreeSitterTextChangeListener(sublime_plugin.TextChangeListener):
             else:
                 tree = edit(self.parser, scope, change, BUFFER_ID_TO_TREE[buffer_id]["tree"])
 
-            BUFFER_ID_TO_TREE[buffer_id] = {"tree": tree}
+            BUFFER_ID_TO_TREE[buffer_id] = make_tree_dict(tree)
 
         # May as well handle all changes before "publishing" update
         publish_tree_update(view.window(), buffer_id=buffer_id, scope=scope)
+        trim_cached_trees()

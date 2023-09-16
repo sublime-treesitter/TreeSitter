@@ -1,4 +1,5 @@
 {
-  // Question: do this with GitHub repos instead? E.g. https://github.com/tree-sitter/tree-sitter-python
-  "installed_languages": ["source.python", "source.json"]
+  "installed_languages": ["source.python", "source.json"],
+  "python_path": "",  // Required
+  "pip_path": ""  // Inferred from python_path if left blank
 }

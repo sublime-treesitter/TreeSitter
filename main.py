@@ -27,13 +27,13 @@ from __future__ import annotations
 
 import subprocess
 import time
-from typing import Literal, Tuple, TypedDict, cast, get_args
+from typing import TypedDict, cast
 
 import sublime  # noqa: F401
 import sublime_plugin
 from sublime import View
 
-from .src.utils import BUILD_PATH, DEPS_PATH, REPO_ROOT, add_path
+from .src.utils import BUILD_PATH, DEPS_PATH, REPO_ROOT, ScopeType, add_path
 
 SETTINGS_FILENAME = "TreeSitter.sublime-settings"
 PYTHON_PATH = "/Users/kyle/.pyenv/versions/3.8.13/bin/python"
@@ -60,7 +60,7 @@ except ImportError:
 
 def clone_language(language_repo: str):
     subprocess.run(
-        ["git", "clone", f"https://github.com/tree-sitter/{language_repo}", str(BUILD_PATH / language_repo)],
+        ["git", "clone", f"https://github.com/{language_repo}", str(BUILD_PATH / language_repo)],
         check=False,
     )
 
@@ -71,7 +71,7 @@ def build_languages():
 
 
 if False:
-    clone_language("tree-sitter-python")
+    clone_language("tree-sitter/tree-sitter-python")
     build_languages()
 
 #
@@ -79,40 +79,6 @@ if False:
 # https://www.sublimetext.com/docs/api_reference.html#sublime.View
 #
 
-ScopeType = Literal[
-    "source.python",
-    "source.ts",
-    "source.tsx",
-    "source.js",
-    "source.jsx",
-    "source.css",
-    "source.scss",
-    "source.go",
-    "source.rust",
-    "source.lua",
-    "source.ruby",
-    "source.java",
-    "source.php",
-    "source.zig",
-    "source.c",
-    "source.c++",
-    "source.cs",
-    "source.swift",
-    "source.scala",
-    "source.sql",
-    "source.toml",
-    "source.yaml",
-    "source.json",  # Any scope that starts with `source.json.` uses JSON language, e.g. source.json.sublime.settings
-    "source.dockerfile",
-    "source.shell.bash",
-    "text.html.vue",
-    "text.html.svelte",
-    "text.html.markdown",
-    "text.html.basic",
-    "text.git.ignore",
-    "text.tex.latex",
-]
-scopes = cast(Tuple[ScopeType, ...], get_args(ScopeType))
 
 
 def check_scope(scope: str | None):

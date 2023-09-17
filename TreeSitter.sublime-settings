@@ -1,5 +1,5 @@
 {
-  "installed_languages": ["source.python", "source.json"],
-  "python_path": "",  // Required
+  "installed_languages": ["python", "json"],
+  "python_path": "",  // Required for installing tree_sitter and building languages
   "pip_path": ""  // Inferred from python_path if left blank
 }

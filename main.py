@@ -11,6 +11,7 @@ It does the following:
     - Getting TS tree by its buffer id
     - Subscribing to tree changes in real time using `sublime_plugin.EventListener`
     - Walking a tree, querying a tree, etc
+    - Parsing a string to get a tree, or editing a tree
 
 It's easy to build TS plugins on top of this one, for "structural" editing, selection, navigation, code folding, code
 maps… See e.g. https://zed.dev/blog/syntax-aware-editing for ideas. It's performant and never blocks the main thread.
@@ -27,7 +28,7 @@ from __future__ import annotations
 
 import subprocess
 import time
-from typing import TypedDict, cast
+from typing import List, TypedDict, cast
 
 import sublime  # noqa: F401
 import sublime_plugin
@@ -46,12 +47,15 @@ PIP_PATH = "/Users/kyle/.pyenv/versions/3.8.13/bin/pip"
 
 
 def install_tree_sitter(pip_path: str = PIP_PATH):
+    """
+    We need a path to pip to install tree_sitter wheel.
+    """
     subprocess.run([pip_path, "install", "--target", str(DEPS_PATH), "tree_sitter"], check=True)
 
 
-# Note: `installed_languages` specified in settings, Python and a few others installed by default
 add_path(str(DEPS_PATH))
 try:
+    # This is a fast way to check if tree_sitter bindings installed
     from tree_sitter import Language, Parser, Tree
 except ImportError:
     install_tree_sitter()
@@ -65,20 +69,26 @@ def clone_language(language_repo: str):
     )
 
 
+def clone_languages():
+    languages = cast(List[str], sublime.load_settings("TreeSitter.sublime-settings").get("installed_languages"))
+
+
 def build_languages():
-    # TODO: don't build unless necessary
+    """
+    Note: `installed_languages` specified in settings, Python installed by default.
+
+    TODO: don't build unless necessary.
+    """
     subprocess.run([PYTHON_PATH, str(REPO_ROOT / "src" / "build.py")], check=True)
 
 
-if False:
-    clone_language("tree-sitter/tree-sitter-python")
-    build_languages()
+clone_languages()
+build_languages()
 
 #
 # Code for caching syntax trees by their `buffer_id`s, and keeping them in sync as `TextChange`s occur
 # https://www.sublimetext.com/docs/api_reference.html#sublime.View
 #
-
 
 
 def check_scope(scope: str | None):
@@ -88,6 +98,9 @@ def check_scope(scope: str | None):
 
 
 def edit(parser: Parser, scope: ScopeType, change: sublime.TextChange, tree: Tree) -> Tree:
+    """
+    Note: the `set_language` call costs nothing, I can call it ~2m times a second on 2021 M1 MPB with 16gb RAM.
+    """
     parser.set_language(SCOPE_TO_LANGUAGE[scope])
     return tree
 
@@ -128,6 +141,8 @@ def publish_tree_update(window: sublime.Window | None, buffer_id: int, scope: st
 
 MAX_CACHED_TREES = 32
 SCOPE_TO_LANGUAGE: dict[ScopeType, Language] = {}
+
+# LRU cache, dict of `(buffer_id, syntax)` tuple keys pointing to dict with tree instance and other metadata.
 BUFFER_ID_TO_TREE: dict[int, TreeDict] = {}
 
 
@@ -159,7 +174,10 @@ class TreeSitterUpdateTreeCommand(sublime_plugin.WindowCommand):
 
 class TreeSitterEventListener(sublime_plugin.EventListener):
     """
-    One of these for the whole Sublime instance. We use it for the `on_load_async` hook.
+    One of these for the whole Sublime instance.
+
+    When a buffer is loaded, reverted, or reloaded, we do a full parse to get its tree, and cache that. This ensures the
+    tree matches the buffer text even if this text is edited e.g. outside of ST.
     """
 
     def __init__(self):
@@ -192,7 +210,13 @@ class TreeSitterEventListener(sublime_plugin.EventListener):
 
 class TreeSitterTextChangeListener(sublime_plugin.TextChangeListener):
     """
-    One of these is instantiated per buffer.
+    Under the hood, ST synchronously puts any async callbacks onto a queue. It asynchronously handles them in FIFO
+    order in a separate thread. All async callbacks are handled by the same thread. Source code suggests this,
+    testing with `time.sleep` confirms it. This ensures there are no races between "text change" events
+    (almost always edit) and "load" (always parse).
+
+    When a text change occurs, we get its buffer and its syntax, look up the tree and metadata, and update/create the
+    tree as necessary. Every listener instance is bound to a buffer, so we know in which buffer text changes occur.
     """
 
     def __init__(self):
@@ -200,25 +224,6 @@ class TreeSitterTextChangeListener(sublime_plugin.TextChangeListener):
         self.parser = Parser()
 
     def on_text_changed_async(self, changes: list[sublime.TextChange]):
-        """
-        Under the hood, ST synchronously puts any async callbacks onto a queue. It asynchronously handles them in FIFO
-        order in a separate thread. Source code suggests this, testing with `time.sleep` confirms it. This ensures
-        there are no races between "text change" events (almost always edit) and "load" (always parse).
-
-        We need to know in which buffer text changes occur. All methods in TextChangeListener are tied to the buffer for
-        which the listener was instantiated, so this is trivial.
-
-        LRU cache, dict of `(buffer_id, syntax)` tuple keys pointing to dict with tree instance and other metadata.
-
-        When a buffer is loaded, reverted, or reloaded, we do an initial parse to get its tree, and cache that.
-
-        When a text change occurs, we get its buffer, get the buffer's primary view, get its syntax, look up the tree
-        and metadata, and update/create the tree as necessary.
-
-        We expose a method to get trees by their buffer, and we returned cached tree or parse on demand if necessary.
-
-        We also expose some convenience methods to walk a tree, etc.
-        """
 
         view = self.buffer.primary_view()
         syntax = view.syntax()

@@ -20,11 +20,10 @@ def not_none(var: T | None) -> T:
     return var
 
 
-def maybe_none(var: T) -> T | None:
-    return var
-
-
 def add_path(path: str):
+    """
+    https://stackoverflow.com/a/1893663/5823904
+    """
     if path not in sys.path:
         sys.path.insert(0, path)
 
@@ -47,7 +46,6 @@ ScopeType = Literal[
     "source.c",
     "source.c++",
     "source.cs",
-    "source.swift",
     "source.scala",
     "source.toml",
     "source.yaml",
@@ -78,7 +76,6 @@ SCOPE_TO_LANGUAGE_NAME: dict[ScopeType, str] = {
     "source.c": "c",
     "source.c++": "cpp",
     "source.cs": "c_sharp",
-    "source.swift": "swift",
     "source.scala": "scala",
     "source.toml": "toml",
     "source.yaml": "yaml",
@@ -106,7 +103,6 @@ LANGUAGE_NAME_TO_REPO = {
     "c": "tree-sitter/tree-sitter-c",
     "cpp": "tree-sitter/tree-sitter-cpp",
     "c_sharp": "tree-sitter/tree-sitter-c-sharp",
-    "swift": "alex-pinkus/tree-sitter-swift",
     "scala": "tree-sitter/tree-sitter-scala",
     "toml": "ikatyang/tree-sitter-toml",
     "yaml": "ikatyang/tree-sitter-yaml",

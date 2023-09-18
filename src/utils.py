@@ -2,22 +2,23 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Literal, Tuple, TypeVar, cast, get_args
+from typing import Dict, List, Literal, TypeVar
+
+import sublime
 
 T = TypeVar("T")
 
+PROJECT_ROOT = Path(__file__).parent.parent
+DEPS_PATH = PROJECT_ROOT / "deps"
+BUILD_PATH = PROJECT_ROOT / "build"
 
-REPO_ROOT = Path(__file__).parent.parent
-DEPS_PATH = REPO_ROOT / "deps"
-BUILD_PATH = REPO_ROOT / "build"
 
-
-def not_none(var: T | None) -> T:
-    """
-    This narrows type from `T | None` -> `T`.
-    """
-    assert var is not None
-    return var
+def log(s: str, with_print = True, with_status = False):
+    msg = f"Tree-sitter: {s}"
+    if with_print:
+        print(msg)
+    if with_status:
+        sublime.status_message(msg)
 
 
 def add_path(path: str):
@@ -26,6 +27,14 @@ def add_path(path: str):
     """
     if path not in sys.path:
         sys.path.insert(0, path)
+
+
+def not_none(var: T | None) -> T:
+    """
+    This narrows type from `T | None` -> `T`.
+    """
+    assert var is not None
+    return var
 
 
 ScopeType = Literal[
@@ -49,47 +58,57 @@ ScopeType = Literal[
     "source.scala",
     "source.toml",
     "source.yaml",
-    "source.json",  # Any scope that starts with `source.json.` uses JSON language, e.g. source.json.sublime.settings
+    "source.json",
+    "source.json.sublime",
+    "source.json.sublime.keymap",
+    "source.json.sublime.commands",
     "source.shell.bash",
     "text.html.vue",
     "text.html.svelte",
     "text.html.basic",
     "text.html.markdown",
 ]
-SCOPES = cast(Tuple[ScopeType, ...], get_args(ScopeType))
 
-SCOPE_TO_LANGUAGE_NAME: dict[ScopeType, str] = {
-    "source.python": "python",
-    "source.ts": "typescript",
-    "source.tsx": "typescript",
-    "source.js": "javascript",
-    "source.jsx": "javascript",
-    "source.css": "css",
-    "source.scss": "scss",
-    "source.go": "go",
-    "source.rust": "rust",
-    "source.lua": "lua",
-    "source.ruby": "ruby",
-    "source.java": "java",
-    "source.php": "php",
-    "source.zig": "zig",
-    "source.c": "c",
-    "source.c++": "cpp",
-    "source.cs": "c_sharp",
-    "source.scala": "scala",
-    "source.toml": "toml",
-    "source.yaml": "yaml",
-    "source.json": "json",
-    "source.shell.bash": "bash",
-    "text.html.vue": "vue",
-    "text.html.svelte": "svelte",
-    "text.html.basic": "basic",
-    "text.html.markdown": "markdown",
+LANGUAGE_NAME_TO_SCOPES: Dict[str, List[ScopeType]] = {
+    "python": ["source.python"],
+    "typescript": ["source.ts"],
+    "tsx": ["source.tsx"],
+    "javascript": [
+        "source.js",
+        "source.jsx",
+    ],
+    "css": ["source.css"],
+    "scss": ["source.scss"],
+    "go": ["source.go"],
+    "rust": ["source.rust"],
+    "lua": ["source.lua"],
+    "ruby": ["source.ruby"],
+    "java": ["source.java"],
+    "php": ["source.php"],
+    "zig": ["source.zig"],
+    "c": ["source.c"],
+    "cpp": ["source.c++"],
+    "c_sharp": ["source.cs"],
+    "scala": ["source.scala"],
+    "toml": ["source.toml"],
+    "yaml": ["source.yaml"],
+    "json": [
+        "source.json",
+        "source.json.sublime",
+        "source.json.sublime.keymap",
+        "source.json.sublime.commands",
+    ],
+    "bash": ["source.shell.bash"],
+    "vue": ["text.html.vue"],
+    "svelte": ["text.html.svelte"],
+    "basic": ["text.html.basic"],
+    "markdown": ["text.html.markdown"],
 }
 
 LANGUAGE_NAME_TO_REPO = {
     "python": "tree-sitter/tree-sitter-python",
     "typescript": "tree-sitter/tree-sitter-typescript",
+    "tsx": "tree-sitter/tree-sitter-typescript",
     "javascript": "tree-sitter/tree-sitter-javascript",
     "css": "tree-sitter/tree-sitter-css",
     "scss": "serenadeai/tree-sitter-scss",
@@ -113,3 +132,13 @@ LANGUAGE_NAME_TO_REPO = {
     "html": "tree-sitter/tree-sitter-html",
     "markdown": "MDeiml/tree-sitter-markdown",
 }
+
+LANGUAGE_NAME_TO_PATH: dict[str, str] = {}
+for name, org_and_repo in LANGUAGE_NAME_TO_REPO.items():
+    _, repo = org_and_repo.split("/")
+    LANGUAGE_NAME_TO_PATH[name] = repo
+
+# Overrides for special repos in which parser.c isn't at src/parser.c
+LANGUAGE_NAME_TO_PATH["typescript"] = str(Path("tree-sitter-typescript") / "typescript")
+LANGUAGE_NAME_TO_PATH["tsx"] = str(Path("tree-sitter-typescript") / "tsx")
+LANGUAGE_NAME_TO_PATH["markdown"] = str(Path("tree-sitter-markdown") / "tree-sitter-markdown")

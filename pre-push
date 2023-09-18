@@ -1,0 +1,6 @@
+#!/bin/bash -e
+
+# Run from root of repo: `cd .git/hooks && ln -s -f ../../pre-push`
+
+ruff src main.py
+pyright src main.py

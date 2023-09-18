@@ -1,13 +1,16 @@
+"""
+This can be called with a system python (not Sublime's python) in a subprocess to build .so files.
+"""
+import sys
+
 from tree_sitter import Language
 
-# TODO: make it possible to import from src.utils
-from utils import BUILD_PATH
+language_file = sys.argv[1]
+language_path = sys.argv[2]
 
 Language.build_library(
     # Create shared object / dynamically linked library in build path
-    str(BUILD_PATH / "language-python.so"),
-    # Include one or more languages
-    [
-        str(BUILD_PATH / "tree-sitter-python"),
-    ],
+    language_file,
+    # Include just one language per .so file, easier to manage
+    [language_path],
 )

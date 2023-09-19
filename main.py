@@ -142,8 +142,8 @@ def build_languages():
             [
                 PYTHON_PATH,
                 str(PROJECT_ROOT / "src" / "build.py"),
-                str(BUILD_PATH / so_file),
                 str(BUILD_PATH / path),
+                str(BUILD_PATH / so_file),
             ],
             check=True,
         )
@@ -151,7 +151,8 @@ def build_languages():
 
 def instantiate_languages():
     """
-    Instantiate `Language`s for language `.so` files, and put them in `SCOPE_TO_LANGUAGE`.
+    Instantiate `Language`s for language `.so` files, and put them in `SCOPE_TO_LANGUAGE`. This takes about 0.1ms for 2
+    languages on my machine.
     """
     language_names = cast(List[str], get_settings().get("installed_languages"))
     files = set(f for f in os.listdir(BUILD_PATH))
@@ -180,15 +181,32 @@ def check_scope(scope: str | None):
     return scope
 
 
-def edit(parser: Parser, scope: ScopeType, change: sublime.TextChange, tree: Tree) -> Tree:
+def edit(parser: Parser, scope: ScopeType, changes: list[sublime.TextChange], tree: Tree, s: str) -> Tree:
     """
-    Note: the `set_language` call costs nothing, I can call it ~2m times a second on 2021 M1 MPB with 16gb RAM.
+    `Tree.edit` has the following signature:
+
+    ```py
+    def edit(
+        self,
+        start_byte: int,
+        old_end_byte: int,
+        new_end_byte: int,
+        start_point: tuple[int, int],
+        old_end_point: tuple[int, int],
+        new_end_point: tuple[int, int],
+    ) -> None:
+    ```
+
+    To get the new tree, do `new_tree = parser.parse(new_source, tree)`
     """
     parser.set_language(SCOPE_TO_LANGUAGE[scope])
-    return tree
+    return parser.parse(s.encode(), tree)
 
 
 def parse(parser: Parser, scope: ScopeType, s: str) -> Tree:
+    """
+    Note: the `set_language` call costs nothing, I can call it 2 million times a second on 2021 M1 MPB with 16gb RAM.
+    """
     parser.set_language(SCOPE_TO_LANGUAGE[scope])
     return parser.parse(s.encode())
 
@@ -229,6 +247,10 @@ SCOPE_TO_LANGUAGE: dict[ScopeType, Language] = {}
 BUFFER_ID_TO_TREE: dict[int, TreeDict] = {}
 
 
+def get_view_text(view: View):
+    return view.substr(sublime.Region(0, view.size()))
+
+
 def trim_cached_trees(size: int = MAX_CACHED_TREES):
     """
     Note that trimming an item is O(N) in `MAX_CACHED_TREES`.
@@ -240,7 +262,7 @@ def trim_cached_trees(size: int = MAX_CACHED_TREES):
         BUFFER_ID_TO_TREE.pop(buffer_id, None)
 
 
-def parse_view(parser: Parser, view: View, publish_update: bool = True):
+def parse_view(parser: Parser, view: View, view_text: str, publish_update: bool = True):
     """
     Defined outside `TreeSitterEventListener` so it can be called by anything, e.g. called on the active buffer after a
     new language is installed and loaded.
@@ -251,7 +273,7 @@ def parse_view(parser: Parser, view: View, publish_update: bool = True):
         return
 
     buffer_id = view.buffer().id()
-    tree = parse(parser, scope, s=view.substr(sublime.Region(0, view.size())))
+    tree = parse(parser, scope, s=view_text)
 
     BUFFER_ID_TO_TREE[buffer_id] = make_tree_dict(tree)
 
@@ -269,7 +291,7 @@ def load_languages():
     instantiate_languages()
     if view := sublime.active_window().active_view():
         if view.buffer().id() not in BUFFER_ID_TO_TREE:
-            parse_view(Parser(), view, publish_update=False)
+            parse_view(Parser(), view, get_view_text(view), publish_update=False)
 
 
 def plugin_loaded():
@@ -314,9 +336,14 @@ class TreeSitterEventListener(sublime_plugin.EventListener):
         self.parser = Parser()
 
     def handle_load(self, view: View):
-        parse_view(self.parser, view)
+        s = get_view_text(view)
 
-    def on_activated_async(self, view: View):
+        def cb():
+            parse_view(self.parser, view, s)
+
+        sublime.set_timeout_async(callback=cb, delay=0)
+
+    def on_activated(self, view: View):
         """
         Ensure that we parse buffers on Sublime Text startup, where `on_load` callbacks not called. Testing shows that
         `on_text_changed` callbacks always enqueued after `on_activated` callbacks.
@@ -324,18 +351,18 @@ class TreeSitterEventListener(sublime_plugin.EventListener):
         if view.buffer().id() not in BUFFER_ID_TO_TREE:
             self.handle_load(view)
 
-    def on_load_async(self, view: View):
+    def on_load(self, view: View):
         """
-        Testing suggests that `on_activated_async` always called before `on_load_async`. To be extra safe, we handle
-        both of these events, and bail out if the other has already run for a given buffer.
+        Testing suggests that `on_activated` always called before `on_load`. To be extra safe, we handle both of these
+        events, and bail out if the other has already run for a given buffer.
         """
         if view.buffer().id() not in BUFFER_ID_TO_TREE:
             self.handle_load(view)
 
-    def on_reload_async(self, view: View):
+    def on_reload(self, view: View):
         self.handle_load(view)
 
-    def on_revert_async(self, view: View):
+    def on_revert(self, view: View):
         self.handle_load(view)
 
 
@@ -354,7 +381,7 @@ class TreeSitterTextChangeListener(sublime_plugin.TextChangeListener):
         super().__init__()
         self.parser = Parser()
 
-    def on_text_changed_async(self, changes: list[sublime.TextChange]):
+    def on_text_changed(self, changes: list[sublime.TextChange]):
         view = self.buffer.primary_view()
         syntax = view.syntax()
         scope = syntax and syntax.scope
@@ -362,15 +389,26 @@ class TreeSitterTextChangeListener(sublime_plugin.TextChangeListener):
             return
 
         buffer_id = self.buffer.id()
+        view_text = get_view_text(view)
 
-        for change in changes:
+        def cb():
+            """
+            Calling `get_view_text()` in `on_text_changed_async` won't always return view text right after the edit
+            because it's async.
+
+            I'm guessing this is a problem, and the only simple solution I can think of using the ST API is handling the
+            text change event in the UI thread, getting the new view text right there, and queueing up a "background
+            job" with `set_timeout_async` to parse the new tree. This works because `set_timeout_async` uses the same
+            queue as the other `_async` methods.
+            """
+
             if buffer_id not in BUFFER_ID_TO_TREE:
-                tree = parse(self.parser, scope, s=view.substr(sublime.Region(0, view.size())))
+                tree = parse(self.parser, scope, s=view_text)
             else:
-                tree = edit(self.parser, scope, change, BUFFER_ID_TO_TREE[buffer_id]["tree"])
+                tree = edit(self.parser, scope, changes, BUFFER_ID_TO_TREE[buffer_id]["tree"], s=view_text)
 
             BUFFER_ID_TO_TREE[buffer_id] = make_tree_dict(tree)
+            publish_tree_update(view.window(), buffer_id=buffer_id, scope=scope)
+            trim_cached_trees()
 
-        # May as well handle all changes before "publishing" update
-        publish_tree_update(view.window(), buffer_id=buffer_id, scope=scope)
-        trim_cached_trees()
+        sublime.set_timeout_async(callback=cb, delay=0)

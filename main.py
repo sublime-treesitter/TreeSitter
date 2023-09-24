@@ -14,7 +14,7 @@ It does the following:
     - Parsing a string to get a tree, or editing a tree
 
 It's easy to build TS plugins on top of this one, for "structural" editing, selection, navigation, code folding, code
-maps… See e.g. https://zed.dev/blog/syntax-aware-editing for ideas. It's performant and never blocks the main thread.
+maps… See e.g. https://zed.dev/blog/syntax-aware-editing for ideas. It's performant and doesn't block the main thread.
 
 It has the following limitations:
 
@@ -29,8 +29,10 @@ from __future__ import annotations
 import os
 import subprocess
 import time
+from importlib.util import find_spec
+from pathlib import Path
 from threading import Thread
-from typing import List, TypedDict, cast
+from typing import TYPE_CHECKING, List, TypedDict, cast
 
 import sublime
 import sublime_plugin
@@ -48,35 +50,19 @@ from .src.utils import (
     log,
 )
 
+if TYPE_CHECKING:
+    from tree_sitter import Language, Parser, Tree
+
 PROJECT_REPO = "https://github.com/sublime-treesitter/treesitter"
 SETTINGS_FILENAME = "TreeSitter.sublime-settings"
-PYTHON_PATH = "/Users/kyle/.pyenv/versions/3.8.13/bin/python"
-# If PIP_PATH isn't set, infer it from PYTHON_PATH
-PIP_PATH = "/Users/kyle/.pyenv/versions/3.8.13/bin/pip"
+
+add_path(str(DEPS_PATH))
+log(f'Python bindings installed at "{DEPS_PATH}"')
+log(f'language repos and .so files installed at "{BUILD_PATH}"')
 
 #
 # Code for installing tree sitter, and installing/building languages
 #
-
-
-def install_tree_sitter(pip_path: str = PIP_PATH):
-    """
-    We use a pip 3.8 executable to install tree_sitter wheel. Call with `check=True` to block until subprocess
-    completes.
-    """
-    subprocess.run([pip_path, "install", "--target", str(DEPS_PATH), "tree_sitter"], check=True)
-
-
-add_path(str(DEPS_PATH))
-try:
-    # This is a fast way to check if tree_sitter bindings installed
-    from tree_sitter import Language, Parser, Tree
-except ImportError:
-    install_tree_sitter()
-    from tree_sitter import Language, Parser, Tree
-
-log(f'Python bindings installed at "{DEPS_PATH}"')
-log(f'language repos and .so files installed at "{BUILD_PATH}"')
 
 
 def get_settings():
@@ -86,6 +72,14 @@ def get_settings():
     [See more here](https://www.sublimetext.com/docs/api_reference.html#plugin-lifecycle).
     """
     return sublime.load_settings("TreeSitter.sublime-settings")
+
+
+def install_tree_sitter(pip_path: str):
+    """
+    We use pip 3.8 executable to install tree_sitter wheel. Call with `check=True` to block until subprocess completes.
+    """
+    if find_spec("tree_sitter") is None:
+        subprocess.run([pip_path, "install", "--target", str(DEPS_PATH), "tree_sitter"], check=True)
 
 
 def clone_language(org_and_repo: str):
@@ -126,7 +120,10 @@ def build_languages():
 
     Note: `installed_languages` specified in `TreeSitter.sublime-settings`, `python` installed by default.
     """
-    language_names = cast(List[str], get_settings().get("installed_languages"))
+    settings = get_settings()
+    language_names = cast(List[str], settings.get("installed_languages"))
+    python_path = cast(str, settings.get("python_path"))
+
     files = set(f for f in os.listdir(BUILD_PATH))
     for name in set(language_names):
         if (so_file := get_so_file(name)) in files:
@@ -140,7 +137,7 @@ def build_languages():
         log(f"building {name} language from files at {path}", with_status=True)
         subprocess.run(
             [
-                PYTHON_PATH,
+                python_path,
                 str(PROJECT_ROOT / "src" / "build.py"),
                 str(BUILD_PATH / path),
                 str(BUILD_PATH / so_file),
@@ -154,6 +151,8 @@ def instantiate_languages():
     Instantiate `Language`s for language `.so` files, and put them in `SCOPE_TO_LANGUAGE`. This takes about 0.1ms for 2
     languages on my machine.
     """
+    from tree_sitter import Language
+
     language_names = cast(List[str], get_settings().get("installed_languages"))
     files = set(f for f in os.listdir(BUILD_PATH))
     for name in set(language_names):
@@ -200,7 +199,11 @@ def edit(parser: Parser, scope: ScopeType, changes: list[sublime.TextChange], tr
     To get the new tree, do `new_tree = parser.parse(new_source, tree)`
     """
     parser.set_language(SCOPE_TO_LANGUAGE[scope])
-    return parser.parse(s.encode(), tree)
+
+    for change in changes:
+        pass
+
+    return tree
 
 
 def parse(parser: Parser, scope: ScopeType, s: str) -> Tree:
@@ -286,6 +289,8 @@ def load_languages():
     """
     Defined as a function so it can all be run in a thread on `plugin_loaded`.
     """
+    from tree_sitter import Parser
+
     clone_languages()
     build_languages()
     instantiate_languages()
@@ -304,6 +309,19 @@ def plugin_loaded():
     Note that "publishing update" with `window.run_command` in `plugin_loaded` leads to noisy but unimportant `Error
     rewriting command`, see https://github.com/sublimelsp/LSP/pull/2277 for more info.
     """
+    settings = get_settings()
+
+    python_path = cast(str, settings.get("python_path"))
+    if not python_path:
+        log("ERROR, `python_path` must be set")
+        return
+
+    pip_path = cast(str, settings.get("pip_path"))
+    if not pip_path:
+        head, _ = os.path.split(python_path)
+        pip_path = str(Path(head) / "pip")
+
+    install_tree_sitter(pip_path)
     instantiate_languages()
     Thread(target=load_languages).start()
 
@@ -331,9 +349,17 @@ class TreeSitterEventListener(sublime_plugin.EventListener):
     tree matches the buffer text even if this text is edited e.g. outside of ST.
     """
 
-    def __init__(self):
-        super().__init__()
-        self.parser = Parser()
+    @property
+    def parser(self):
+        """
+        This is a lazy loading hack. We can't get settings, which means we can't ensure `tree_sitter` is installed,
+        until the plugin is loaded and plugin classes have been instantiated.
+        """
+        if not hasattr(self, "_parser"):
+            from tree_sitter import Parser
+
+            self._parser = Parser()
+        return self._parser
 
     def handle_load(self, view: View):
         s = get_view_text(view)
@@ -377,9 +403,13 @@ class TreeSitterTextChangeListener(sublime_plugin.TextChangeListener):
     tree as necessary. Every listener instance is bound to a buffer, so we know in which buffer text changes occur.
     """
 
-    def __init__(self):
-        super().__init__()
-        self.parser = Parser()
+    @property
+    def parser(self):
+        if not hasattr(self, "_parser"):
+            from tree_sitter import Parser
+
+            self._parser = Parser()
+        return self._parser
 
     def on_text_changed(self, changes: list[sublime.TextChange]):
         view = self.buffer.primary_view()

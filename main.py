@@ -1,5 +1,10 @@
 """
-This plugin is a "dependency", see https://packagecontrol.io/docs/dependencies.
+This plugin would ideally be a "dependency", see https://packagecontrol.io/docs/dependencies, but dependencies can't
+interface with `sublime_plugin` directly. This means no commands and no event listeners. See
+https://github.com/SublimeText/sublime_lib/issues/127#issuecomment-516397027.
+
+This means plugins that "depend" on this one, i.e. that do `from sublime_tree_sitter import get_tree`, need to be loaded
+after this one, or they need to do `sublime_tree_sitter` imports after this package has loaded.
 
 It does the following:
 
@@ -8,10 +13,10 @@ It does the following:
 - Installs and builds TS languages, e.g. https://github.com/tree-sitter/tree-sitter-python, based on settings
     - Updates languages on command
 - Provides APIs for:
-    - Getting TS tree by its buffer id
+    - Getting a Tree-sitter `Tree` by its buffer id
     - Subscribing to tree changes in real time using `sublime_plugin.EventListener`
     - Walking a tree, querying a tree, etc
-    - Parsing a string to get a tree, or editing a tree
+    - Getting a Tree-sitter `Language` by `Syntax.scope`
 
 It's easy to build TS plugins on top of this one, for "structural" editing, selection, navigation, code folding, code
 maps… See e.g. https://zed.dev/blog/syntax-aware-editing for ideas. It's performant and doesn't block the main thread.
@@ -333,7 +338,8 @@ class TreeSitterUpdateTreeCommand(sublime_plugin.WindowCommand):
     ```py
     class Listener(sublime_plugin.EventListener):
         def on_window_command(self, window, command, args):
-            print(command, args["buffer_id"])
+            if command == "tree_sitter_update_tree":
+                print(args["buffer_id"])
     ```
     """
 

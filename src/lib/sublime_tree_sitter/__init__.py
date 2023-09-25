@@ -6,24 +6,31 @@ Usage: `from sublime_tree_sitter import get_tree`
 from __future__ import annotations
 
 import copy
+from typing import TYPE_CHECKING
 
 from SublimeTreeSitter.main import BUFFER_ID_TO_TREE, SCOPE_TO_LANGUAGE
 from SublimeTreeSitter.src.utils import ScopeType
-from tree_sitter import Node, Parser, Tree
 
-__all__ = ["get_trees", "get_tree", "parse_tree", "query_tree", "walk_tree"]
+if TYPE_CHECKING:
+    # So this module can be imported before `tree_sitter` installed
+    from tree_sitter import Node, Parser, Tree
+
+__all__ = ["get_tree_dicts", "get_tree_dict", "parse_tree", "query_tree", "walk_tree"]
 
 
-def get_trees(buffer_id: int):
+def get_tree_dicts(buffer_id: int):
     return {buffer_id: copy.copy(tree) for buffer_id, tree in BUFFER_ID_TO_TREE.items()}
 
 
-def get_tree(buffer_id: int):
+def get_tree_dict(buffer_id: int):
     tree = BUFFER_ID_TO_TREE.get(buffer_id)
-    return copy.copy(tree)
+    return copy.copy(tree) if tree else None
 
 
 def parse_tree(scope: ScopeType, s: str | bytes):
+    """
+    Get a syntax tree back for source code `s`.
+    """
     parser = Parser()
     if scope not in SCOPE_TO_LANGUAGE:
         return None
@@ -32,6 +39,11 @@ def parse_tree(scope: ScopeType, s: str | bytes):
 
 
 def query_tree(scope: ScopeType, query_s: str, tree_or_node: Tree | Node):
+    """
+    Query a syntax tree or node with `query_s`.
+
+    See https://github.com/tree-sitter/py-tree-sitter#pattern-matching
+    """
     if scope not in SCOPE_TO_LANGUAGE:
         return None
     language = SCOPE_TO_LANGUAGE[scope]
@@ -41,6 +53,8 @@ def query_tree(scope: ScopeType, query_s: str, tree_or_node: Tree | Node):
 
 def walk_tree(tree_or_node: Tree | Node):
     """
+    Walk all the nodes under `tree_or_node`.
+
     See https://github.com/tree-sitter/py-tree-sitter/issues/33#issuecomment-864557166
     """
     cursor = tree_or_node.walk()

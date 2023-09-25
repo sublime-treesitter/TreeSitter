@@ -24,6 +24,8 @@ def log(s: str, with_print = True, with_status = False):
 
 def add_path(path: str):
     """
+    Add path to "Python path", i.e. `sys.path`. Idempotent.
+
     https://stackoverflow.com/a/1893663/5823904
     """
     if path not in sys.path:

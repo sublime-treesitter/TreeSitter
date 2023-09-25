@@ -3,20 +3,20 @@ This plugin would ideally be a "dependency", see https://packagecontrol.io/docs/
 interface with `sublime_plugin` directly. This means no commands and no event listeners. See
 https://github.com/SublimeText/sublime_lib/issues/127#issuecomment-516397027.
 
-This means plugins that "depend" on this one, i.e. that do `from sublime_tree_sitter import get_tree`, need to be loaded
-after this one, or they need to do `sublime_tree_sitter` imports after this package has loaded.
+This means plugins that "depend" on this one, i.e. that do `from sublime_tree_sitter import get_tree_dict`, need to be
+loaded after this one, or they need to do `sublime_tree_sitter` imports after this package has loaded.
 
 It does the following:
 
 - Installs Tree-sitter Python bindings, see https://github.com/tree-sitter/py-tree-sitter
     - Importable by other plugins with `import tree_sitter`
-- Installs and builds TS languages, e.g. https://github.com/tree-sitter/tree-sitter-python, based on settings
+- Installs and builds Tree-sitter languages, e.g. https://github.com/tree-sitter/tree-sitter-python, based on settings
     - Updates languages on command
 - Provides APIs for:
     - Getting a Tree-sitter `Tree` by its buffer id, getting trees for all tracked buffers
     - Subscribing to tree changes in any buffer in real time using `sublime_plugin.EventListener`
-    - Passing source code and a scope and getting back a tree
-    - Walking a tree, querying a tree, etc
+    - Getting a tree from a string of code
+    - Querying a tree, walking a tree
 
 It's easy to build Tree-sitter plugins on top of this one, for "structural" editing, selection, navigation, code
 folding, code maps… See e.g. https://zed.dev/blog/syntax-aware-editing for ideas. It's performant and doesn't block the
@@ -70,9 +70,14 @@ SCOPE_TO_LANGUAGE: dict[ScopeType, Language] = {}
 # LRU cache, dict of `(buffer_id, syntax)` tuple keys pointing to dict with tree instance and other metadata.
 BUFFER_ID_TO_TREE: dict[int, TreeDict] = {}
 
+# These need to be added to plugin host's `sys.path` before other plugins that depend on them load
+add_path(str(LIB_PATH))
+add_path(str(DEPS_PATH))
+
 
 class TreeDict(TypedDict):
     tree: Tree
+    scope: ScopeType
     updated_s: float
 
 
@@ -274,8 +279,8 @@ def parse(parser: Parser, scope: ScopeType, s: str) -> Tree:
     return parser.parse(s.encode())
 
 
-def make_tree_dict(tree: Tree) -> TreeDict:
-    return {"tree": tree, "updated_s": time.monotonic()}
+def make_tree_dict(tree: Tree, scope: ScopeType) -> TreeDict:
+    return {"tree": tree, "updated_s": time.monotonic(), "scope": scope}
 
 
 def get_scope(view: View) -> ScopeType | None:
@@ -329,7 +334,7 @@ def parse_view(parser: Parser, view: View, view_text: str, publish_update: bool 
     buffer_id = view.buffer().id()
     tree = parse(parser, scope, s=view_text)
 
-    BUFFER_ID_TO_TREE[buffer_id] = make_tree_dict(tree)
+    BUFFER_ID_TO_TREE[buffer_id] = make_tree_dict(tree, scope)
 
     if publish_update:
         publish_tree_update(view.window(), buffer_id=buffer_id, scope=scope)
@@ -357,8 +362,6 @@ def plugin_loaded():
     We load any uncloned or unbuilt languages in the background, and if a language needed to parse the active view was
     just installed, we parse this view when we're finished.
     """
-    add_path(str(LIB_PATH))
-    add_path(str(DEPS_PATH))
     log(f'Python bindings installed at "{DEPS_PATH}"')
     log(f'language repos and .so files installed at "{BUILD_PATH}"')
 
@@ -385,13 +388,13 @@ class TreeSitterUpdateTreeCommand(sublime_plugin.WindowCommand):
 
     ```py
     import sublime_plugin
-    from sublime_tree_sitter import main
+    from sublime_tree_sitter import get_tree_dict
 
 
     class Listener(sublime_plugin.EventListener):
         def on_window_command(self, window, command, args):
             if command == "tree_sitter_update_tree":
-                print(main.get_tree(args["buffer_id"]))
+                print(get_tree_dict(args["buffer_id"]))
     ```
     """
 
@@ -494,7 +497,7 @@ class TreeSitterTextChangeListener(sublime_plugin.TextChangeListener):
             else:
                 tree = edit(self.parser, scope, changes, BUFFER_ID_TO_TREE[buffer_id]["tree"], s=view_text)
 
-            BUFFER_ID_TO_TREE[buffer_id] = make_tree_dict(tree)
+            BUFFER_ID_TO_TREE[buffer_id] = make_tree_dict(tree, scope)
             publish_tree_update(view.window(), buffer_id=buffer_id, scope=scope)
             trim_cached_trees()
 

@@ -13,13 +13,14 @@ It does the following:
 - Installs and builds TS languages, e.g. https://github.com/tree-sitter/tree-sitter-python, based on settings
     - Updates languages on command
 - Provides APIs for:
-    - Getting a Tree-sitter `Tree` by its buffer id
-    - Subscribing to tree changes in real time using `sublime_plugin.EventListener`
+    - Getting a Tree-sitter `Tree` by its buffer id, getting trees for all tracked buffers
+    - Subscribing to tree changes in any buffer in real time using `sublime_plugin.EventListener`
+    - Passing source code and a scope and getting back a tree
     - Walking a tree, querying a tree, etc
-    - Getting a Tree-sitter `Language` by `Syntax.scope`
 
-It's easy to build TS plugins on top of this one, for "structural" editing, selection, navigation, code folding, code
-maps… See e.g. https://zed.dev/blog/syntax-aware-editing for ideas. It's performant and doesn't block the main thread.
+It's easy to build Tree-sitter plugins on top of this one, for "structural" editing, selection, navigation, code
+folding, code maps… See e.g. https://zed.dev/blog/syntax-aware-editing for ideas. It's performant and doesn't block the
+main thread.
 
 It has the following limitations:
 
@@ -61,9 +62,17 @@ if TYPE_CHECKING:
 PROJECT_REPO = "https://github.com/sublime-treesitter/treesitter"
 SETTINGS_FILENAME = "TreeSitter.sublime-settings"
 
-add_path(str(DEPS_PATH))
-log(f'Python bindings installed at "{DEPS_PATH}"')
-log(f'language repos and .so files installed at "{BUILD_PATH}"')
+MAX_CACHED_TREES = 32
+SCOPE_TO_LANGUAGE: dict[ScopeType, Language] = {}
+
+# LRU cache, dict of `(buffer_id, syntax)` tuple keys pointing to dict with tree instance and other metadata.
+BUFFER_ID_TO_TREE: dict[int, TreeDict] = {}
+
+
+class TreeDict(TypedDict):
+    tree: Tree
+    updated_s: float
+
 
 #
 # Code for installing tree sitter, and installing/building languages
@@ -76,7 +85,7 @@ def get_settings():
 
     [See more here](https://www.sublimetext.com/docs/api_reference.html#plugin-lifecycle).
     """
-    return sublime.load_settings("TreeSitter.sublime-settings")
+    return sublime.load_settings(SETTINGS_FILENAME)
 
 
 def install_tree_sitter(pip_path: str):
@@ -260,11 +269,6 @@ def parse(parser: Parser, scope: ScopeType, s: str) -> Tree:
     return parser.parse(s.encode())
 
 
-class TreeDict(TypedDict):
-    tree: Tree
-    updated_s: float
-
-
 def make_tree_dict(tree: Tree) -> TreeDict:
     return {"tree": tree, "updated_s": time.monotonic()}
 
@@ -287,13 +291,6 @@ def publish_tree_update(window: sublime.Window | None, buffer_id: int, scope: st
             "scope": scope or "",
         },
     )
-
-
-MAX_CACHED_TREES = 32
-SCOPE_TO_LANGUAGE: dict[ScopeType, Language] = {}
-
-# LRU cache, dict of `(buffer_id, syntax)` tuple keys pointing to dict with tree instance and other metadata.
-BUFFER_ID_TO_TREE: dict[int, TreeDict] = {}
 
 
 def get_view_text(view: View):
@@ -351,10 +348,12 @@ def plugin_loaded():
 
     We load any uncloned or unbuilt languages in the background, and if a language needed to parse the active view was
     just installed, we parse this view when we're finished.
-
-    Note that "publishing update" with `window.run_command` in `plugin_loaded` leads to noisy but unimportant `Error
-    rewriting command`, see https://github.com/sublimelsp/LSP/pull/2277 for more info.
     """
+    add_path(str(PROJECT_ROOT))
+    add_path(str(DEPS_PATH))
+    log(f'Python bindings installed at "{DEPS_PATH}"')
+    log(f'language repos and .so files installed at "{BUILD_PATH}"')
+
     settings = get_settings()
 
     python_path = cast(str, settings.get("python_path"))
@@ -377,10 +376,14 @@ class TreeSitterUpdateTreeCommand(sublime_plugin.WindowCommand):
     So client code can "subscribe" to tree updates with an `EventListener`. For example:
 
     ```py
+    import sublime_plugin
+    from sublime_tree_sitter import main
+
+
     class Listener(sublime_plugin.EventListener):
         def on_window_command(self, window, command, args):
             if command == "tree_sitter_update_tree":
-                print(args["buffer_id"])
+                print(main.get_tree(args["buffer_id"]))
     ```
     """
 
@@ -470,11 +473,10 @@ class TreeSitterTextChangeListener(sublime_plugin.TextChangeListener):
 
         def cb():
             """
-            Calling `get_view_text()` in `on_text_changed_async` won't always return view text right after the edit
+            Calling `get_view_text()` in `on_text_changed_async` doesn't always return view text right after the edit
             because it's async.
 
-            I'm guessing this is a problem, and the only simple solution I can think of is using the ST API to handle
-            the text change event in the UI thread, getting the new view text right there, and queueing up
+            So, we handle the text change event in the main UI thread, get the new view text right there, and queue up
             a "background job" with `set_timeout_async` to parse the new tree. This works because `set_timeout_async`
             uses the same queue as the other `_async` methods.
             """
@@ -489,3 +491,16 @@ class TreeSitterTextChangeListener(sublime_plugin.TextChangeListener):
             trim_cached_trees()
 
         sublime.set_timeout_async(callback=cb, delay=0)
+
+
+#
+# "Public" functions
+#
+
+
+def get_tree(buffer_id: int):
+    return BUFFER_ID_TO_TREE.get(buffer_id)
+
+
+def get_language(scope: ScopeType):
+    return SCOPE_TO_LANGUAGE.get(scope)

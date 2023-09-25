@@ -8,7 +8,7 @@ after this one, or they need to do `sublime_tree_sitter` imports after this pack
 
 It does the following:
 
-- Installs and periodically upgrades Tree-sitter Python bindings, see https://github.com/tree-sitter/py-tree-sitter
+- Installs Tree-sitter Python bindings, see https://github.com/tree-sitter/py-tree-sitter
     - Importable by other plugins with `import tree_sitter`
 - Installs and builds TS languages, e.g. https://github.com/tree-sitter/tree-sitter-python, based on settings
     - Updates languages on command
@@ -59,6 +59,7 @@ from .src.utils import (
 if TYPE_CHECKING:
     from tree_sitter import Language, Parser, Tree
 
+TREE_SITTER_BINDINGS_VERSION = "0.20.2"
 PROJECT_REPO = "https://github.com/sublime-treesitter/treesitter"
 SETTINGS_FILENAME = "TreeSitter.sublime-settings"
 
@@ -93,7 +94,10 @@ def install_tree_sitter(pip_path: str):
     We use pip 3.8 executable to install tree_sitter wheel. Call with `check=True` to block until subprocess completes.
     """
     if find_spec("tree_sitter") is None:
-        subprocess.run([pip_path, "install", "--target", str(DEPS_PATH), "tree_sitter"], check=True)
+        subprocess.run(
+            [pip_path, "install", "--target", str(DEPS_PATH), f"tree_sitter=={TREE_SITTER_BINDINGS_VERSION}"],
+            check=True,
+        )
 
 
 def clone_language(org_and_repo: str):
@@ -281,6 +285,9 @@ def get_scope(view: View) -> ScopeType | None:
 
 
 def publish_tree_update(window: sublime.Window | None, buffer_id: int, scope: str):
+    """
+    See `TreeSitterUpdateTreeCommand`.
+    """
     if not window:
         return
 
@@ -310,8 +317,8 @@ def trim_cached_trees(size: int = MAX_CACHED_TREES):
 
 def parse_view(parser: Parser, view: View, view_text: str, publish_update: bool = True):
     """
-    Defined outside `TreeSitterEventListener` so it can be called by anything, e.g. called on the active buffer after a
-    new language is installed and loaded.
+    Defined outside of `TreeSitterEventListener` so it can be called by anything, e.g. called on the active buffer after
+    a new language is installed and loaded.
     """
     syntax = view.syntax()
     scope = syntax and syntax.scope
@@ -421,8 +428,8 @@ class TreeSitterEventListener(sublime_plugin.EventListener):
 
     def on_activated(self, view: View):
         """
-        Ensure that we parse buffers on Sublime Text startup, where `on_load` callbacks not called. Testing shows that
-        `on_text_changed` callbacks always enqueued after `on_activated` callbacks.
+        Called when view gains focus. Ensures that we parse buffers on Sublime Text startup, where `on_load` callbacks
+        not called. Testing shows that `on_text_changed` callbacks always enqueued after `on_activated` callbacks.
         """
         if view.buffer().id() not in BUFFER_ID_TO_TREE:
             self.handle_load(view)

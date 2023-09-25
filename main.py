@@ -185,9 +185,19 @@ def check_scope(scope: str | None):
     return scope
 
 
-def edit(parser: Parser, scope: ScopeType, changes: list[sublime.TextChange], tree: Tree, s: str) -> Tree:
+def get_edit(change: sublime.TextChange) -> tuple[int, int, int, tuple[int, int], tuple[int, int], tuple[int, int]]:
     """
-    `Tree.edit` has the following signature:
+    There are just two cases to handle:
+
+    - Text inserted
+    - Text deleted
+
+    Sublime serializes text replacement as insertion then deletion.
+
+    - For insertion, the start and end historic positions `a` and `b` are the same, and `str` contains the inserted text
+    - For deletion, `str` is empty, `b` is where deletion starts, and `a` is where deletion ends
+
+    `Tree.edit` [has the following signature](https://github.com/tree-sitter/py-tree-sitter#editing):
 
     ```py
     def edit(
@@ -200,15 +210,46 @@ def edit(parser: Parser, scope: ScopeType, changes: list[sublime.TextChange], tr
         new_end_point: tuple[int, int],
     ) -> None:
     ```
+    """
 
+    if change.str:
+        # Insertion
+        start_byte = change.a.pt
+        old_end_byte = change.b.pt
+        new_end_byte = change.b.pt + len(change.str)
+        start_point = (change.a.row, change.a.col)
+        old_end_point = (change.b.row, change.b.col)
+
+        # https://docs.python.org/3/library/stdtypes.html#str.splitlines
+        lines = change.str.splitlines()
+        assert len(lines) > 0
+        last_line = lines[-1]
+        new_end_col = change.a.col + len(last_line) if len(lines) == 1 else len(last_line)
+        new_end_point = (change.a.row + len(lines) - 1, new_end_col)
+    else:
+        # Deletion
+        start_byte = change.a.pt
+        old_end_byte = change.b.pt
+        new_end_byte = change.a.pt
+        start_point = (change.a.row, change.a.col)
+        old_end_point = (change.b.row, change.b.col)
+        new_end_point = (change.a.row, change.a.col)
+
+    return start_byte, old_end_byte, new_end_byte, start_point, old_end_point, new_end_point
+
+
+def edit(parser: Parser, scope: ScopeType, changes: list[sublime.TextChange], tree: Tree, s: str) -> Tree:
+    """
     To get the new tree, do `new_tree = parser.parse(new_source, tree)`
     """
     parser.set_language(SCOPE_TO_LANGUAGE[scope])
 
     for change in changes:
-        pass
+        # Sublime serializes text changes s.t. that they can be applied as is and in order, even if text is replaced
+        # and/or there are multiple selections
+        tree.edit(*get_edit(change))
 
-    return tree
+    return parser.parse(s.encode(), tree)
 
 
 def parse(parser: Parser, scope: ScopeType, s: str) -> Tree:
@@ -432,10 +473,10 @@ class TreeSitterTextChangeListener(sublime_plugin.TextChangeListener):
             Calling `get_view_text()` in `on_text_changed_async` won't always return view text right after the edit
             because it's async.
 
-            I'm guessing this is a problem, and the only simple solution I can think of using the ST API is handling the
-            text change event in the UI thread, getting the new view text right there, and queueing up a "background
-            job" with `set_timeout_async` to parse the new tree. This works because `set_timeout_async` uses the same
-            queue as the other `_async` methods.
+            I'm guessing this is a problem, and the only simple solution I can think of is using the ST API to handle
+            the text change event in the UI thread, getting the new view text right there, and queueing up
+            a "background job" with `set_timeout_async` to parse the new tree. This works because `set_timeout_async`
+            uses the same queue as the other `_async` methods.
             """
 
             if buffer_id not in BUFFER_ID_TO_TREE:

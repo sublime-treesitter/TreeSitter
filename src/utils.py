@@ -11,6 +11,7 @@ T = TypeVar("T")
 PROJECT_ROOT = Path(__file__).parent.parent
 DEPS_PATH = PROJECT_ROOT / "deps"
 BUILD_PATH = PROJECT_ROOT / "build"
+LIB_PATH = PROJECT_ROOT / "src" / "lib"
 
 
 def log(s: str, with_print = True, with_status = False):

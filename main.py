@@ -50,6 +50,7 @@ from .src.utils import (
     LANGUAGE_NAME_TO_PATH,
     LANGUAGE_NAME_TO_REPO,
     LANGUAGE_NAME_TO_SCOPES,
+    LIB_PATH,
     PROJECT_ROOT,
     ScopeType,
     add_path,
@@ -356,7 +357,7 @@ def plugin_loaded():
     We load any uncloned or unbuilt languages in the background, and if a language needed to parse the active view was
     just installed, we parse this view when we're finished.
     """
-    add_path(str(PROJECT_ROOT))
+    add_path(str(LIB_PATH))
     add_path(str(DEPS_PATH))
     log(f'Python bindings installed at "{DEPS_PATH}"')
     log(f'language repos and .so files installed at "{BUILD_PATH}"')
@@ -498,16 +499,3 @@ class TreeSitterTextChangeListener(sublime_plugin.TextChangeListener):
             trim_cached_trees()
 
         sublime.set_timeout_async(callback=cb, delay=0)
-
-
-#
-# "Public" functions
-#
-
-
-def get_tree(buffer_id: int):
-    return BUFFER_ID_TO_TREE.get(buffer_id)
-
-
-def get_language(scope: ScopeType):
-    return SCOPE_TO_LANGUAGE.get(scope)

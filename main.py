@@ -11,7 +11,7 @@ It does the following:
 - Installs Tree-sitter Python bindings, see https://github.com/tree-sitter/py-tree-sitter
     - Importable by other plugins with `import tree_sitter`
 - Installs and builds Tree-sitter languages, e.g. https://github.com/tree-sitter/tree-sitter-python, based on settings
-    - Updates languages on command
+    - Also installs and updates languages on command
 - Provides APIs for:
     - Getting a Tree-sitter `Tree` by its buffer id, getting trees for all tracked buffers
     - Subscribing to tree changes in any buffer in real time using `sublime_plugin.EventListener`
@@ -24,7 +24,7 @@ main thread.
 
 It has the following limitations:
 
-- It doesn't support nested syntax trees, e.g. `<script>` tags in HTML docs
+- It doesn't support nested syntax trees, e.g. JS code in `<script>` tags in HTML docs
 - Due to limitations in Sublime's bundled Python, it requires an external Python 3.8 executable (see settings)
 - Due to how syntax highlighting works in Sublime, it can't be used for syntax highlighting
     - See e.g. https://github.com/sublimehq/sublime_text/issues/817

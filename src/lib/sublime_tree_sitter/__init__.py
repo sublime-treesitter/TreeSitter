@@ -1,7 +1,7 @@
 """
 Public-facing functions for SublimeTreeSitter, designed for use by other plugins.
 
-Usage: `from sublime_tree_sitter import get_tree`
+Example usage: `from sublime_tree_sitter import get_tree_dict`
 """
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     # So this module can be imported before `tree_sitter` installed
     from tree_sitter import Node, Parser, Tree
 
-__all__ = ["get_tree_dicts", "get_tree_dict", "parse_tree", "query_tree", "walk_tree"]
+__all__ = ["get_tree_dicts", "get_tree_dict", "get_tree_from_code", "query_tree", "walk_tree"]
 
 
 def get_tree_dicts(buffer_id: int):
@@ -27,7 +27,7 @@ def get_tree_dict(buffer_id: int):
     return copy.copy(tree) if tree else None
 
 
-def parse_tree(scope: ScopeType, s: str | bytes):
+def get_tree_from_code(scope: ScopeType, s: str | bytes):
     """
     Get a syntax tree back for source code `s`.
     """

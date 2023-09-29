@@ -3,7 +3,7 @@
     "caption": "TreeSitter: Settings",
     "command": "edit_settings",
     "args": {
-      "base_file": "${packages}/SublimeTreeSitter/TreeSitter.sublime-settings",
+      "base_file": "${packages}/TreeSitter/TreeSitter.sublime-settings",
     }
   },
 ]

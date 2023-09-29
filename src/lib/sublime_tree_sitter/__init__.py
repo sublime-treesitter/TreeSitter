@@ -1,5 +1,5 @@
 """
-Public-facing functions for SublimeTreeSitter, designed for use by other plugins.
+Public-facing functions to interface with Tree-sitter, designed for use by other plugins.
 
 Example usage: `from sublime_tree_sitter import get_tree_dict`
 """
@@ -8,8 +8,8 @@ from __future__ import annotations
 import copy
 from typing import TYPE_CHECKING
 
-from SublimeTreeSitter.main import BUFFER_ID_TO_TREE, SCOPE_TO_LANGUAGE
-from SublimeTreeSitter.src.utils import ScopeType
+from TreeSitter.main import BUFFER_ID_TO_TREE, SCOPE_TO_LANGUAGE
+from TreeSitter.src.utils import ScopeType
 
 if TYPE_CHECKING:
     # So this module can be imported before `tree_sitter` installed

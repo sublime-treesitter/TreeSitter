@@ -23,7 +23,8 @@ Sublime `TreeSitter` does the following:
 
 - Install `TreeSitter` from Package Control
 - Go to `TreeSitter: Settings`, and set `python_path` to point to a Python 3.8 executable on your machine
-- Install new languages with `TreeSitter: Install Language`, `python` and `json` installed by default
+- Install new languages with `TreeSitter: Install Language`
+    - `python` and `json` installed by default
 
 ## Usage
 
@@ -53,7 +54,7 @@ class MyTreeSitterListener(sublime_plugin.EventListener):
 To import `sublime_tree_sitter` in your plugin, you have 2 options:
 
 - Name your plugin so it comes after `TreeSitter` in alphabetical order (all `User` plugins do this)
-- Import `sublime_tree_sitter` after your plugin is loaded, e.g. do something like this:
+- Or, import `sublime_tree_sitter` after your plugin is loaded, e.g. do something like this:
 
 ```py
 import sublime_plugin

@@ -6,4 +6,8 @@
       "base_file": "${packages}/TreeSitter/TreeSitter.sublime-settings",
     }
   },
+  {
+    "caption": "TreeSitter: Install Language",
+    "command": "tree_sitter_install_language"
+  },
 ]

@@ -52,6 +52,7 @@ from .src.utils import (
     LANGUAGE_NAME_TO_SCOPES,
     LIB_PATH,
     PROJECT_ROOT,
+    SCOPE_TO_LANGUAGE_NAME,
     ScopeType,
     add_path,
     log,
@@ -186,6 +187,10 @@ def instantiate_languages():
         if (so_file := get_so_file(name)) not in files:
             continue
 
+        # We've already instantiated this language, no need to do it again
+        if all(scope in SCOPE_TO_LANGUAGE for scope in LANGUAGE_NAME_TO_SCOPES[name]):
+            continue
+
         language = Language(str(BUILD_PATH / so_file), name)
 
         for scope in LANGUAGE_NAME_TO_SCOPES[name]:
@@ -283,11 +288,11 @@ def make_tree_dict(tree: Tree, scope: ScopeType) -> TreeDict:
     return {"tree": tree, "updated_s": time.monotonic(), "scope": scope}
 
 
-def get_scope(view: View) -> ScopeType | None:
+def get_scope(view: View) -> str | None:
     syntax = view.syntax()
     if not syntax:
         return None
-    return cast(ScopeType, syntax.scope)
+    return syntax.scope
 
 
 def publish_tree_update(window: sublime.Window | None, buffer_id: int, scope: str):
@@ -326,8 +331,7 @@ def parse_view(parser: Parser, view: View, view_text: str, publish_update: bool 
     Defined outside of `TreeSitterEventListener` so it can be called by anything, e.g. called on the active buffer after
     a new language is installed and loaded.
     """
-    syntax = view.syntax()
-    scope = syntax and syntax.scope
+    scope = get_scope(view)
     if not (scope := check_scope(scope)):
         return
 
@@ -344,6 +348,8 @@ def parse_view(parser: Parser, view: View, view_text: str, publish_update: bool 
 def load_languages():
     """
     Defined as a function so it can all be run in a thread on `plugin_loaded`.
+
+    Idempotent. Also, doesn't reclone/rebuild/reinstantiate languages that have been cloned/built/instantiated.
     """
     from tree_sitter import Parser
 
@@ -474,8 +480,7 @@ class TreeSitterTextChangeListener(sublime_plugin.TextChangeListener):
 
     def on_text_changed(self, changes: list[sublime.TextChange]):
         view = self.buffer.primary_view()
-        syntax = view.syntax()
-        scope = syntax and syntax.scope
+        scope = get_scope(view)
         if not (scope := check_scope(scope)):
             return
 
@@ -502,3 +507,64 @@ class TreeSitterTextChangeListener(sublime_plugin.TextChangeListener):
             trim_cached_trees()
 
         sublime.set_timeout_async(callback=cb, delay=0)
+
+
+#
+# Maintenance commands, e.g. for installing, updating, and removing languages
+#
+
+
+def get_instantiated_language_names():
+    return set(SCOPE_TO_LANGUAGE_NAME[scope] for scope in SCOPE_TO_LANGUAGE)
+
+
+class TreeSitterSelectLanguageMixin:
+    window: sublime.Window
+
+    def run(self, **kwargs):
+        """
+        Allow user to select from installed and uninstalled languages in quick panel. Render language for the active
+        view's scope as first option.
+        """
+        available_languages = sorted(list(LANGUAGE_NAME_TO_SCOPES.keys()))
+        instantiated_languages = get_instantiated_language_names()
+
+        view = self.window.active_view()
+        scope = get_scope(view) if view else None
+        active_language = SCOPE_TO_LANGUAGE_NAME[scope] if scope in SCOPE_TO_LANGUAGE_NAME else None
+
+        if active_language in available_languages:
+            idx = available_languages.index(active_language)
+            available_languages.insert(0, available_languages.pop(idx))
+
+        self.languages = available_languages
+
+        def get_option(language: str):
+            prefix = "✅" if language in instantiated_languages else "❌"
+            return f"{prefix}        {language}"
+
+        self.window.show_quick_panel([get_option(lang) for lang in self.languages], self.on_select)
+
+    def on_select(self, idx: int):
+        raise NotImplementedError
+
+
+class TreeSitterInstallLanguageCommand(TreeSitterSelectLanguageMixin, sublime_plugin.WindowCommand):
+    """
+    Add a language to `"installed_languages"` in settings, then install and instantiate it.
+    """
+
+    def on_select(self, idx: int):
+        if idx < 0:
+            return
+
+        language = self.languages[idx]
+
+        settings = get_settings()
+        languages = cast(List[str], settings.get("installed_languages"))
+        if language not in languages:
+            languages.append(language)
+
+        settings.set("installed_languages", languages)
+        sublime.save_settings(SETTINGS_FILENAME)
+        Thread(target=load_languages).start()

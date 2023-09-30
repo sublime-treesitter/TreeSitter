@@ -65,6 +65,7 @@ ScopeType = Literal[
     "source.json.sublime",
     "source.json.sublime.keymap",
     "source.json.sublime.commands",
+    "source.json.sublime.theme",
     "source.shell.bash",
     "text.html.vue",
     "text.html.svelte",
@@ -100,6 +101,7 @@ LANGUAGE_NAME_TO_SCOPES: Dict[str, List[ScopeType]] = {
         "source.json.sublime",
         "source.json.sublime.keymap",
         "source.json.sublime.commands",
+        "source.json.sublime.theme"
     ],
     "bash": ["source.shell.bash"],
     "vue": ["text.html.vue"],
@@ -107,6 +109,11 @@ LANGUAGE_NAME_TO_SCOPES: Dict[str, List[ScopeType]] = {
     "basic": ["text.html.basic"],
     "markdown": ["text.html.markdown"],
 }
+
+SCOPE_TO_LANGUAGE_NAME: dict[ScopeType, str] = {}
+for language_name, scopes in LANGUAGE_NAME_TO_SCOPES.items():
+    for scope in scopes:
+        SCOPE_TO_LANGUAGE_NAME[scope] = language_name
 
 LANGUAGE_NAME_TO_REPO = {
     "python": "tree-sitter/tree-sitter-python",

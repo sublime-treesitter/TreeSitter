@@ -1,0 +1,56 @@
+{
+  "contributions": {
+    "settings": [
+      {
+        "file_patterns": ["/TreeSitter.sublime-settings"],
+        "schema": {
+          "properties": {
+            "installed_languages": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "python",
+                  "typescript",
+                  "tsx",
+                  "javascript",
+                  "css",
+                  "scss",
+                  "go",
+                  "rust",
+                  "lua",
+                  "ruby",
+                  "java",
+                  "php",
+                  "zig",
+                  "c",
+                  "cpp",
+                  "c_sharp",
+                  "scala",
+                  "toml",
+                  "yaml",
+                  "json",
+                  "bash",
+                  "vue",
+                  "svelte",
+                  "html",
+                  "markdown"
+                ]
+              },
+              "markdownDescription": "Run `TreeSitter: Install Language` to see supported languages"
+            },
+            "python_path": {
+              "type": "string",
+              "markdownDescription": "Path to Python 3.8 executable, required for installing `tree_sitter` bindings and building languages"
+            },
+            "pip_path": {
+              "type": "string",
+              "markdownDescription": "Inferred from `python_path` if left blank"
+            }
+          },
+          "additionalProperties": false,
+          "required": ["python_path"]
+        }
+      }
+    ]
+  }
+}

@@ -106,7 +106,7 @@ LANGUAGE_NAME_TO_SCOPES: Dict[str, List[ScopeType]] = {
     "bash": ["source.shell.bash"],
     "vue": ["text.html.vue"],
     "svelte": ["text.html.svelte"],
-    "basic": ["text.html.basic"],
+    "html": ["text.html.basic"],
     "markdown": ["text.html.markdown"],
 }
 

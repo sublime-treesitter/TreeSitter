@@ -1,11 +1,10 @@
-# Sublime Tree-sitter
+# Sublime TreeSitter
 
 The `TreeSitter` plugin provides Sublime Text plugins with a performant and flexible interface to [Tree-sitter](https://tree-sitter.github.io/tree-sitter/).
 
 ## Why Tree-sitter
 
-Tree-sitter builds a parse tree for text in any buffer, fast enough to update the tree after every keystroke. The `TreeSitter` plugin provides everything you need to build Sublime Text plugins for "structural" editing, selection, navigation, code
-folding, code maps… See e.g. https://zed.dev/blog/syntax-aware-editing for ideas.
+Tree-sitter builds a parse tree for text in any buffer, fast enough to update the tree after every keystroke. The `TreeSitter` plugin provides everything you need to build Sublime Text plugins for "structural" editing, selection, navigation, code folding, code maps… See e.g. https://zed.dev/blog/syntax-aware-editing for ideas.
 
 ## Overview
 
@@ -24,6 +23,7 @@ Sublime `TreeSitter` does the following:
 
 - Install `TreeSitter` from Package Control
 - Go to `TreeSitter: Settings`, and set `python_path` to point to a Python 3.8 executable on your machine
+- Install new languages with `TreeSitter: Install Language`, `python` and `json` installed by default
 
 ## Usage
 
@@ -42,10 +42,27 @@ import sublime_plugin
 from sublime_tree_sitter import get_tree_dict
 
 
-class Listener(sublime_plugin.EventListener):
+class MyTreeSitterListener(sublime_plugin.EventListener):
     def on_window_command(self, window, command, args):
         if command == "tree_sitter_update_tree":
             print(get_tree_dict(args["buffer_id"]))
+```
+
+### Plugin load order
+
+To import `sublime_tree_sitter` in your plugin, you have 2 options:
+
+- Name your plugin so it comes after `TreeSitter` in alphabetical order (all `User` plugins do this)
+- Import `sublime_tree_sitter` after your plugin is loaded, e.g. do something like this:
+
+```py
+import sublime_plugin
+
+
+class MyTreeSitterCommand(sublime_plugin.WindowCommand):
+    def run(self, **kwargs):
+        from sublime_tree_sitter import get_tree_dict
+        # ...
 ```
 
 ## Limitations

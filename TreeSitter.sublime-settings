@@ -1,8 +1,10 @@
 {
-  "installed_languages": [
-    "python",
-    "json"
-  ],
-  "python_path": "",  // Required for installing tree_sitter and building languages
-  "pip_path": ""  // Inferred from python_path if left blank
+  // Required for installing tree_sitter and building languages
+  "python_path": "",
+
+  // Inferred from python_path if left blank
+  "pip_path": "",
+
+  // Run `TreeSitter: Install Language` to see supported languages
+  "installed_languages": ["python", "json"]
 }

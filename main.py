@@ -25,6 +25,7 @@ main thread.
 It has the following limitations:
 
 - It doesn't support nested syntax trees, e.g. JS code in `<script>` tags in HTML docs
+- It only supports source code encoded with ASCII / UTF-8 (Tree-sitter also supports UTF-16)
 - Due to limitations in Sublime's bundled Python, it requires an external Python 3.8 executable (see settings)
 - Due to how syntax highlighting works in Sublime, it can't be used for syntax highlighting
     - See e.g. https://github.com/sublimehq/sublime_text/issues/817
@@ -66,7 +67,7 @@ TREE_SITTER_BINDINGS_VERSION = "0.20.2"
 PROJECT_REPO = "https://github.com/sublime-treesitter/treesitter"
 SETTINGS_FILENAME = "TreeSitter.sublime-settings"
 
-MAX_CACHED_TREES = 32
+MAX_CACHED_TREES = 16
 SCOPE_TO_LANGUAGE: dict[ScopeType, Language] = {}
 
 # LRU cache, dict of `(buffer_id, syntax)` tuple keys pointing to dict with tree instance and other metadata.
@@ -213,7 +214,28 @@ def check_scope(scope: str | None):
     return scope
 
 
-def get_edit(change: sublime.TextChange) -> tuple[int, int, int, tuple[int, int], tuple[int, int], tuple[int, int]]:
+def byte_offset(point: int, s: str):
+    """
+    Convert a Sublime [Point](https://www.sublimetext.com/docs/api_reference.html#sublime.Point), the offset from the
+    beginning of the buffer in UTF-8 code points, to a byte offset. For UTF-8, byte is the same as "code unit".
+
+    Tree-sitter works with code unit offsets, not code point offsets. If source code is ASCII it makes no difference,
+    but testing shows that making edits with code points instead of code units corrupts trees for non-ASCII source.
+
+    ---
+
+    Note that Sublime (confusingly) calls code points offsets "character" offsets. Multiple code points can result in
+    just one user-perceived character, e.g. this one: שָׁ
+
+    More info here: http://utf8everywhere.org/, https://tonsky.me/blog/unicode/
+    """
+    return len(s[:point].encode())
+
+
+def get_edit(
+    change: sublime.TextChange,
+    s: str,
+) -> tuple[int, int, int, tuple[int, int], tuple[int, int], tuple[int, int]]:
     """
     There are just two cases to handle:
 
@@ -223,7 +245,7 @@ def get_edit(change: sublime.TextChange) -> tuple[int, int, int, tuple[int, int]
     Sublime serializes text replacement as insertion then deletion.
 
     - For insertion, the start and end historic positions `a` and `b` are the same, and `str` contains the inserted text
-    - For deletion, `str` is empty, `b` is where deletion starts, and `a` is where deletion ends
+    - For deletion, `str` is empty, `b` is where deletion starts, and `a` is where deletion ends, s.t. a < b
 
     `Tree.edit` [has the following signature](https://github.com/tree-sitter/py-tree-sitter#editing):
 
@@ -241,27 +263,30 @@ def get_edit(change: sublime.TextChange) -> tuple[int, int, int, tuple[int, int]
     """
 
     if change.str:
-        # Insertion
-        start_byte = change.a.pt
-        old_end_byte = change.b.pt
-        new_end_byte = change.b.pt + len(change.str)
-        start_point = (change.a.row, change.a.col)
-        old_end_point = (change.b.row, change.b.col)
+        # Insertion, where `a.pt` equals `b.pt`
+        change_bytes = change.str.encode()
 
+        start_byte = byte_offset(change.a.pt, s)
+        old_end_byte = start_byte
+        new_end_byte = start_byte + len(change_bytes)
+
+        start_point = (change.a.row, change.a.col_utf8)
+        old_end_point = (change.b.row, change.b.col_utf8)
         # https://docs.python.org/3/library/stdtypes.html#str.splitlines
-        lines = change.str.splitlines()
+        lines = change_bytes.splitlines()
         assert len(lines) > 0
         last_line = lines[-1]
-        new_end_col = change.a.col + len(last_line) if len(lines) == 1 else len(last_line)
+        new_end_col = change.a.col_utf8 + len(last_line) if len(lines) == 1 else len(last_line)
         new_end_point = (change.a.row + len(lines) - 1, new_end_col)
     else:
-        # Deletion
-        start_byte = change.a.pt
-        old_end_byte = change.b.pt
-        new_end_byte = change.a.pt
-        start_point = (change.a.row, change.a.col)
-        old_end_point = (change.b.row, change.b.col)
-        new_end_point = (change.a.row, change.a.col)
+        # Deletion, where `a.pt < b.pt`
+        start_byte = byte_offset(change.a.pt, s)
+        old_end_byte = start_byte + change.len_utf8
+        new_end_byte = start_byte
+
+        start_point = (change.a.row, change.a.col_utf8)
+        old_end_point = (change.b.row, change.b.col_utf8)
+        new_end_point = (change.a.row, change.a.col_utf8)
 
     return start_byte, old_end_byte, new_end_byte, start_point, old_end_point, new_end_point
 
@@ -269,13 +294,14 @@ def get_edit(change: sublime.TextChange) -> tuple[int, int, int, tuple[int, int]
 def edit(parser: Parser, scope: ScopeType, changes: list[sublime.TextChange], tree: Tree, s: str) -> Tree:
     """
     To get the new tree, do `new_tree = parser.parse(new_source, tree)`
+
+    Note that Sublime serializes text changes s.t. that they can be applied as is and in order, even if text is replaced
+    and/or there are multiple selections.
     """
     parser.set_language(SCOPE_TO_LANGUAGE[scope])
 
     for change in changes:
-        # Sublime serializes text changes s.t. that they can be applied as is and in order, even if text is replaced
-        # and/or there are multiple selections
-        tree.edit(*get_edit(change))
+        tree.edit(*get_edit(change, s))
 
     return parser.parse(s.encode(), tree)
 

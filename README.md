@@ -54,7 +54,7 @@ class MyTreeSitterListener(sublime_plugin.EventListener):
 To import `sublime_tree_sitter` in your plugin, you have 2 options:
 
 - Name your plugin so it comes after `TreeSitter` in alphabetical order (all `User` plugins do this)
-- Or, import `sublime_tree_sitter` after your plugin is loaded, e.g. do something like this:
+- Or, import `sublime_tree_sitter` after your plugin has loaded, e.g. do something like this:
 
 ```py
 import sublime_plugin

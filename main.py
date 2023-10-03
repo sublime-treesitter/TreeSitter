@@ -29,6 +29,8 @@ It has the following limitations:
 - Due to limitations in Sublime's bundled Python, it requires an external Python 3.8 executable (see settings)
 - Due to how syntax highlighting works in Sublime, it can't be used for syntax highlighting
     - See e.g. https://github.com/sublimehq/sublime_text/issues/817
+- It breaks if the package is reloaded, which is a nuisance if you're working on this codebase
+    - After package is reloaded, `BUFFER_ID_TO_TREE` is no longer updated on buffer changes
 """
 
 from __future__ import annotations

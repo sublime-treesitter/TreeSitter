@@ -70,7 +70,6 @@ ScopeType = Literal[
     "text.html.vue",
     "text.html.svelte",
     "text.html.basic",
-    "text.html.markdown",
 ]
 
 LANGUAGE_NAME_TO_SCOPES: Dict[str, List[ScopeType]] = {
@@ -107,7 +106,6 @@ LANGUAGE_NAME_TO_SCOPES: Dict[str, List[ScopeType]] = {
     "vue": ["text.html.vue"],
     "svelte": ["text.html.svelte"],
     "html": ["text.html.basic"],
-    "markdown": ["text.html.markdown"],
 }
 
 SCOPE_TO_LANGUAGE_NAME: dict[ScopeType, str] = {}
@@ -140,8 +138,15 @@ LANGUAGE_NAME_TO_REPO = {
     "vue": "ikatyang/tree-sitter-vue",
     "svelte": "Himujjal/tree-sitter-svelte",
     "html": "tree-sitter/tree-sitter-html",
-    "markdown": "MDeiml/tree-sitter-markdown",
 }
+
+"""
+Notes on languages
+
+- "markdown": "MDeiml/tree-sitter-markdown"
+    - Not enabling this because it frequently crashes Sublime Text on edit, apparently also causes issues in neovim
+    - https://github.com/MDeiml/tree-sitter-markdown/issues/114
+"""
 
 LANGUAGE_NAME_TO_PATH: dict[str, str] = {}
 for name, org_and_repo in LANGUAGE_NAME_TO_REPO.items():
@@ -151,4 +156,3 @@ for name, org_and_repo in LANGUAGE_NAME_TO_REPO.items():
 # Overrides for special repos in which parser.c isn't at src/parser.c
 LANGUAGE_NAME_TO_PATH["typescript"] = str(Path("tree-sitter-typescript") / "typescript")
 LANGUAGE_NAME_TO_PATH["tsx"] = str(Path("tree-sitter-typescript") / "tsx")
-LANGUAGE_NAME_TO_PATH["markdown"] = str(Path("tree-sitter-markdown") / "tree-sitter-markdown")

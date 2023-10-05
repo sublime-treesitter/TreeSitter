@@ -33,7 +33,6 @@
                   "vue",
                   "svelte",
                   "html",
-                  "markdown"
                 ]
               },
               "markdownDescription": "Run `TreeSitter: Install Language` to see supported languages"

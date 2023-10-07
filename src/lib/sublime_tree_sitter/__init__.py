@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 __all__ = ["get_tree_dicts", "get_tree_dict", "get_tree_from_code", "query_tree", "walk_tree"]
 
 
-def get_tree_dicts(buffer_id: int):
+def get_tree_dicts():
     return {buffer_id: copy.copy(tree) for buffer_id, tree in BUFFER_ID_TO_TREE.items()}
 
 

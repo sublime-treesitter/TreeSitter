@@ -1,5 +1,5 @@
 """
-Ideally TreeSitter would ideally be a "dependency", see https://packagecontrol.io/docs/dependencies, but dependencies
+Ideally TreeSitter would be a "dependency", see https://packagecontrol.io/docs/dependencies, but dependencies
 can't interface with `sublime_plugin` directly. This means no commands and no event listeners. See
 https://github.com/SublimeText/sublime_lib/issues/127#issuecomment-516397027.
 
@@ -51,8 +51,8 @@ from sublime import View
 from .src.utils import (
     BUILD_PATH,
     DEPS_PATH,
-    LANGUAGE_NAME_TO_PATH,
-    LANGUAGE_NAME_TO_REPO,
+    LANGUAGE_NAME_TO_ORG_AND_REPO,
+    LANGUAGE_NAME_TO_PARSER_PATH,
     LANGUAGE_NAME_TO_SCOPES,
     LIB_PATH,
     PROJECT_ROOT,
@@ -82,6 +82,7 @@ add_path(str(DEPS_PATH))
 
 class TreeDict(TypedDict):
     tree: Tree
+    s: str
     scope: ScopeType
     updated_s: float
 
@@ -131,11 +132,11 @@ def clone_languages():
     language_names = get_language_names_from_settings()
     files = set(f for f in os.listdir(BUILD_PATH))
     for name in set(language_names):
-        if name not in LANGUAGE_NAME_TO_REPO:
+        if name not in LANGUAGE_NAME_TO_ORG_AND_REPO:
             log(f'"{name}" language is not supported, read more at {PROJECT_REPO}')
             continue
 
-        org_and_repo = LANGUAGE_NAME_TO_REPO[name]
+        org_and_repo = LANGUAGE_NAME_TO_ORG_AND_REPO[name]
         _, repo = org_and_repo.split("/")
         if repo in files:
             # We've already cloned this repo
@@ -162,10 +163,10 @@ def build_languages():
             # We've already built this .so file
             continue
 
-        if name not in LANGUAGE_NAME_TO_PATH:
+        if name not in LANGUAGE_NAME_TO_PARSER_PATH:
             continue
 
-        path = LANGUAGE_NAME_TO_PATH[name]
+        path = LANGUAGE_NAME_TO_PARSER_PATH[name]
         log(f"building {name} language from files at {path}", with_status=True)
         subprocess.run(
             [
@@ -235,18 +236,27 @@ def byte_offset(point: int, s: str):
 
 
 def get_edit(
-    change: sublime.TextChange,
     s: str,
-) -> tuple[int, int, int, tuple[int, int], tuple[int, int], tuple[int, int]]:
+    change: sublime.TextChange,
+) -> tuple[str, tuple[int, int, int, tuple[int, int], tuple[int, int], tuple[int, int]]]:
     """
-    There are just two cases to handle:
+    Args:
+
+    - s: Buffer text before text change was applied
+    - change: TextChange
+
+    Returns:
+
+    - Tuple with updated `s` after change applied, and `Tree.edit` args
+
+    ---
+
+    There are two cases to handle:
 
     - Text inserted
     - Text deleted
 
-    Sublime serializes text replacement as insertion then deletion.
-
-    - For insertion, the start and end historic positions `a` and `b` are the same, and `str` contains the inserted text
+    - For insertion, the start and end historic positions `a` and `b` are the same, and `str` is the inserted text
     - For deletion, `str` is empty, `b` is where deletion starts, and `a` is where deletion ends, s.t. a < b
 
     `Tree.edit` [has the following signature](https://github.com/tree-sitter/py-tree-sitter#editing):
@@ -260,52 +270,64 @@ def get_edit(
         start_point: tuple[int, int],
         old_end_point: tuple[int, int],
         new_end_point: tuple[int, int],
-    ) -> None:
+    ):
     ```
     """
+    changed_s = s
+
+    # Initialize variables assuming neither insertion nor deletion
+    start_byte = byte_offset(change.a.pt, s)
+    old_end_byte = start_byte
+    new_end_byte = start_byte
+
+    start_point = (change.a.row, change.a.col_utf8)
+    old_end_point = (change.b.row, change.b.col_utf8)
+    new_end_point = (change.a.row, change.a.col_utf8)
+
+    if change.a.pt < change.b.pt:
+        # Deletion
+        old_end_byte = start_byte + change.len_utf8
+        changed_s = changed_s[: change.a.pt] + changed_s[change.b.pt :]
 
     if change.str:
-        # Insertion, where `a.pt` equals `b.pt`
+        # Insertion, note that `start_byte`, `old_end_byte`, `start_point`, and `old_end_point` have already been set
         change_bytes = change.str.encode()
-
-        start_byte = byte_offset(change.a.pt, s)
-        old_end_byte = start_byte
         new_end_byte = start_byte + len(change_bytes)
 
-        start_point = (change.a.row, change.a.col_utf8)
-        old_end_point = (change.b.row, change.b.col_utf8)
-        # https://docs.python.org/3/library/stdtypes.html#str.splitlines
         lines = change_bytes.splitlines()
-        assert len(lines) > 0
         last_line = lines[-1]
         new_end_col = change.a.col_utf8 + len(last_line) if len(lines) == 1 else len(last_line)
         new_end_point = (change.a.row + len(lines) - 1, new_end_col)
-    else:
-        # Deletion, where `a.pt < b.pt`
-        start_byte = byte_offset(change.a.pt, s)
-        old_end_byte = start_byte + change.len_utf8
-        new_end_byte = start_byte
+        changed_s = changed_s[: change.a.pt] + change.str + changed_s[change.a.pt :]
 
-        start_point = (change.a.row, change.a.col_utf8)
-        old_end_point = (change.b.row, change.b.col_utf8)
-        new_end_point = (change.a.row, change.a.col_utf8)
-
-    return start_byte, old_end_byte, new_end_byte, start_point, old_end_point, new_end_point
+    return changed_s, (start_byte, old_end_byte, new_end_byte, start_point, old_end_point, new_end_point)
 
 
-def edit(parser: Parser, scope: ScopeType, changes: list[sublime.TextChange], tree: Tree, s: str) -> Tree:
+def edit(
+    parser: Parser,
+    scope: ScopeType,
+    changes: list[sublime.TextChange],
+    tree: Tree,
+    s: str,
+    new_s: str,
+    debug: bool = False,
+) -> Tree:
     """
-    To get the new tree, do `new_tree = parser.parse(new_source, tree)`
+    To get the new tree, do `new_tree = parser.parse(new_s, tree)`
 
     Note that Sublime serializes text changes s.t. that they can be applied as is and in order, even if text is replaced
     and/or there are multiple selections.
     """
     parser.set_language(SCOPE_TO_LANGUAGE[scope])
 
+    changed_s = s
     for change in changes:
-        tree.edit(*get_edit(change, s))
+        changed_s, edit_tuple = get_edit(changed_s, change)
+        tree.edit(*edit_tuple)
 
-    return parser.parse(s.encode(), tree)
+    if debug:
+        assert changed_s == new_s
+    return parser.parse(new_s.encode(), tree)
 
 
 def parse(parser: Parser, scope: ScopeType, s: str) -> Tree:
@@ -316,8 +338,8 @@ def parse(parser: Parser, scope: ScopeType, s: str) -> Tree:
     return parser.parse(s.encode())
 
 
-def make_tree_dict(tree: Tree, scope: ScopeType) -> TreeDict:
-    return {"tree": tree, "updated_s": time.monotonic(), "scope": scope}
+def make_tree_dict(tree: Tree, s: str, scope: ScopeType) -> TreeDict:
+    return {"tree": tree, "s": s, "updated_s": time.monotonic(), "scope": scope}
 
 
 def get_scope(view: View) -> str | None:
@@ -370,7 +392,7 @@ def parse_view(parser: Parser, view: View, view_text: str, publish_update: bool 
     buffer_id = view.buffer().id()
     tree = parse(parser, scope, s=view_text)
 
-    BUFFER_ID_TO_TREE[buffer_id] = make_tree_dict(tree, scope)
+    BUFFER_ID_TO_TREE[buffer_id] = make_tree_dict(tree, view_text, scope)
 
     if publish_update:
         publish_tree_update(view.window(), buffer_id=buffer_id, scope=scope)
@@ -485,14 +507,18 @@ class TreeSitterEventListener(sublime_plugin.EventListener):
 
 class TreeSitterTextChangeListener(sublime_plugin.TextChangeListener):
     """
-    Under the hood, ST synchronously puts any async callbacks onto a queue. It asynchronously handles them in FIFO
-    order in a separate thread. All async callbacks are handled by the same thread. Source code suggests this,
-    testing with `time.sleep` confirms it. This ensures there are no races between "text change" events
-    (almost always edit) and "load" (always parse).
+    Under the hood, ST synchronously puts any async callbacks onto a queue. It asynchronously handles them in FIFO order
+    in a separate thread. All async callbacks are handled by the same thread. Sublime source code suggests this,
+    testing with `time.sleep` confirms it. This ensures there are no races between "text change" events (almost always
+    edit) and "load" (always parse).
 
     When a text change occurs, we get its buffer and its syntax, look up the tree and metadata, and update/create the
     tree as necessary. Every listener instance is bound to a buffer, so we know in which buffer text changes occur.
     """
+
+    def __init__(self, *args, **kwargs):
+        self.debug = bool(get_settings().get("debug", False))
+        super().__init__(*args, **kwargs)
 
     @property
     def parser(self):
@@ -524,9 +550,18 @@ class TreeSitterTextChangeListener(sublime_plugin.TextChangeListener):
             if buffer_id not in BUFFER_ID_TO_TREE:
                 tree = parse(self.parser, scope, s=view_text)
             else:
-                tree = edit(self.parser, scope, changes, BUFFER_ID_TO_TREE[buffer_id]["tree"], s=view_text)
+                tree_dict = BUFFER_ID_TO_TREE[buffer_id]
+                tree = edit(
+                    self.parser,
+                    scope,
+                    changes,
+                    tree_dict["tree"],
+                    s=tree_dict["s"],
+                    new_s=view_text,
+                    debug=self.debug,
+                )
 
-            BUFFER_ID_TO_TREE[buffer_id] = make_tree_dict(tree, scope)
+            BUFFER_ID_TO_TREE[buffer_id] = make_tree_dict(tree, view_text, scope)
             publish_tree_update(view.window(), buffer_id=buffer_id, scope=scope)
             trim_cached_trees()
 
@@ -547,7 +582,7 @@ def remove_language(language: str):
     - Remove language repo and .so file from disk
     - Remove `Language` instance from `SCOPE_TO_LANGUAGE`
     """
-    org_and_repo = LANGUAGE_NAME_TO_REPO.get(language)
+    org_and_repo = LANGUAGE_NAME_TO_ORG_AND_REPO.get(language)
     if org_and_repo:
         _, repo = org_and_repo.split("/")
         try:

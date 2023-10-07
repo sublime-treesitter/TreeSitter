@@ -113,7 +113,15 @@ for language_name, scopes in LANGUAGE_NAME_TO_SCOPES.items():
     for scope in scopes:
         SCOPE_TO_LANGUAGE_NAME[scope] = language_name
 
-LANGUAGE_NAME_TO_REPO = {
+"""
+Notes on languages
+
+- "markdown": "MDeiml/tree-sitter-markdown"
+    - Not enabling this because it frequently crashes Sublime Text on edit, apparently also causes issues in neovim
+    - https://github.com/MDeiml/tree-sitter-markdown/issues/114
+"""
+
+LANGUAGE_NAME_TO_ORG_AND_REPO = {
     "python": "tree-sitter/tree-sitter-python",
     "typescript": "tree-sitter/tree-sitter-typescript",
     "tsx": "tree-sitter/tree-sitter-typescript",
@@ -140,19 +148,11 @@ LANGUAGE_NAME_TO_REPO = {
     "html": "tree-sitter/tree-sitter-html",
 }
 
-"""
-Notes on languages
-
-- "markdown": "MDeiml/tree-sitter-markdown"
-    - Not enabling this because it frequently crashes Sublime Text on edit, apparently also causes issues in neovim
-    - https://github.com/MDeiml/tree-sitter-markdown/issues/114
-"""
-
-LANGUAGE_NAME_TO_PATH: dict[str, str] = {}
-for name, org_and_repo in LANGUAGE_NAME_TO_REPO.items():
+LANGUAGE_NAME_TO_PARSER_PATH: dict[str, str] = {}
+for name, org_and_repo in LANGUAGE_NAME_TO_ORG_AND_REPO.items():
     _, repo = org_and_repo.split("/")
-    LANGUAGE_NAME_TO_PATH[name] = repo
+    LANGUAGE_NAME_TO_PARSER_PATH[name] = repo
 
 # Overrides for special repos in which parser.c isn't at src/parser.c
-LANGUAGE_NAME_TO_PATH["typescript"] = str(Path("tree-sitter-typescript") / "typescript")
-LANGUAGE_NAME_TO_PATH["tsx"] = str(Path("tree-sitter-typescript") / "tsx")
+LANGUAGE_NAME_TO_PARSER_PATH["typescript"] = str(Path("tree-sitter-typescript") / "typescript")
+LANGUAGE_NAME_TO_PARSER_PATH["tsx"] = str(Path("tree-sitter-typescript") / "tsx")

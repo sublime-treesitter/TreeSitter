@@ -44,6 +44,10 @@
             "pip_path": {
               "type": "string",
               "markdownDescription": "Inferred from `python_path` if left blank"
+            },
+            "debug": {
+              "type": "boolean",
+              "markdownDescription": "Enables debug logging and assertions; has non-zero performance cost, for developers only"
             }
           },
           "additionalProperties": false,

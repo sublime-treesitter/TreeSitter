@@ -236,14 +236,16 @@ def byte_offset(point: int, s: str):
 
 
 def get_edit(
-    s: str,
     change: sublime.TextChange,
-) -> tuple[str, tuple[int, int, int, tuple[int, int], tuple[int, int], tuple[int, int]]]:
+    s: str,
+    should_change_s: bool,
+) -> tuple[tuple[int, int, int, tuple[int, int], tuple[int, int], tuple[int, int]], str]:
     """
     Args:
 
     - s: Buffer text before text change was applied
     - change: TextChange
+    - should_change_s: Should we change s? Not doing so for final TextChange in "group" is a performance optimization
 
     Returns:
 
@@ -287,7 +289,8 @@ def get_edit(
     if change.a.pt < change.b.pt:
         # Deletion
         old_end_byte = start_byte + change.len_utf8
-        changed_s = changed_s[: change.a.pt] + changed_s[change.b.pt :]
+        if should_change_s:
+            changed_s = changed_s[: change.a.pt] + changed_s[change.b.pt :]
 
     if change.str:
         # Insertion, note that `start_byte`, `old_end_byte`, `start_point`, and `old_end_point` have already been set
@@ -298,9 +301,10 @@ def get_edit(
         last_line = lines[-1]
         new_end_col = change.a.col_utf8 + len(last_line) if len(lines) == 1 else len(last_line)
         new_end_point = (change.a.row + len(lines) - 1, new_end_col)
-        changed_s = changed_s[: change.a.pt] + change.str + changed_s[change.a.pt :]
+        if should_change_s:
+            changed_s = changed_s[: change.a.pt] + change.str + changed_s[change.a.pt :]
 
-    return changed_s, (start_byte, old_end_byte, new_end_byte, start_point, old_end_point, new_end_point)
+    return (start_byte, old_end_byte, new_end_byte, start_point, old_end_point, new_end_point), changed_s
 
 
 def edit(
@@ -321,11 +325,13 @@ def edit(
     parser.set_language(SCOPE_TO_LANGUAGE[scope])
 
     changed_s = s
-    for change in changes:
-        changed_s, edit_tuple = get_edit(changed_s, change)
+    for idx, change in enumerate(changes):
+        should_change_s = debug or idx < len(changes) - 1  # Performance optimization, see `get_edit`
+        edit_tuple, changed_s = get_edit(change, changed_s, should_change_s)
         tree.edit(*edit_tuple)
 
     if debug:
+        # Applying changes to `s` must yield `new_s`
         assert changed_s == new_s
     return parser.parse(new_s.encode(), tree)
 

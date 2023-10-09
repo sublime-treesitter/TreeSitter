@@ -38,7 +38,7 @@ from __future__ import annotations
 import os
 import subprocess
 import time
-from importlib.util import find_spec
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from shutil import rmtree
 from threading import Thread
@@ -105,7 +105,14 @@ def install_tree_sitter(pip_path: str):
     """
     We use pip 3.8 executable to install tree_sitter wheel. Call with `check=True` to block until subprocess completes.
     """
-    if find_spec("tree_sitter") is None:
+    try:
+        v = version("tree_sitter")
+    except PackageNotFoundError:
+        v = ""
+
+    if v != TREE_SITTER_BINDINGS_VERSION:
+        # Bindings either not installed, or correct version not installed
+        log(f"installing tree_sitter=={TREE_SITTER_BINDINGS_VERSION}")
         subprocess.run(
             [pip_path, "install", "--target", str(DEPS_PATH), f"tree_sitter=={TREE_SITTER_BINDINGS_VERSION}"],
             check=True,

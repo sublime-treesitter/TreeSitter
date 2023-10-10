@@ -2,19 +2,19 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Dict, List, Literal, TypeVar
+from typing import Dict, List, Literal, TypedDict, cast
 
 import sublime
-
-T = TypeVar("T")
 
 PROJECT_ROOT = Path(__file__).parent.parent
 DEPS_PATH = PROJECT_ROOT / "deps"
 BUILD_PATH = PROJECT_ROOT / "build"
 LIB_PATH = PROJECT_ROOT / "src" / "lib"
 
+SETTINGS_FILENAME = "TreeSitter.sublime-settings"
 
-def log(s: str, with_print = True, with_status = False):
+
+def log(s: str, with_print=True, with_status=False):
     msg = f"Tree-sitter: {s}"
     if with_print:
         print(msg)
@@ -32,12 +32,14 @@ def add_path(path: str):
         sys.path.insert(0, path)
 
 
-def not_none(var: T | None) -> T:
-    """
-    This narrows type from `T | None` -> `T`.
-    """
-    assert var is not None
-    return var
+class SettingsDict(TypedDict):
+    installed_languages: List[str]
+    python_path: str
+    pip_path: str
+    language_name_to_scopes: Dict[str, List[ScopeType]] | None
+    language_name_to_org_and_repo: Dict[str, str] | None
+    language_name_to_parser_path: Dict[str, str] | None
+    debug: bool | None
 
 
 ScopeType = Literal[
@@ -100,18 +102,13 @@ LANGUAGE_NAME_TO_SCOPES: Dict[str, List[ScopeType]] = {
         "source.json.sublime",
         "source.json.sublime.keymap",
         "source.json.sublime.commands",
-        "source.json.sublime.theme"
+        "source.json.sublime.theme",
     ],
     "bash": ["source.shell.bash"],
     "vue": ["text.html.vue"],
     "svelte": ["text.html.svelte"],
     "html": ["text.html.basic"],
 }
-
-SCOPE_TO_LANGUAGE_NAME: dict[ScopeType, str] = {}
-for language_name, scopes in LANGUAGE_NAME_TO_SCOPES.items():
-    for scope in scopes:
-        SCOPE_TO_LANGUAGE_NAME[scope] = language_name
 
 """
 Notes on languages
@@ -153,6 +150,44 @@ for name, org_and_repo in LANGUAGE_NAME_TO_ORG_AND_REPO.items():
     _, repo = org_and_repo.split("/")
     LANGUAGE_NAME_TO_PARSER_PATH[name] = repo
 
-# Overrides for special repos in which parser.c isn't at src/parser.c
+# Overrides for special Tree-sitter grammar repos in which parser.c isn't at src/parser.c
 LANGUAGE_NAME_TO_PARSER_PATH["typescript"] = str(Path("tree-sitter-typescript") / "typescript")
 LANGUAGE_NAME_TO_PARSER_PATH["tsx"] = str(Path("tree-sitter-typescript") / "tsx")
+
+
+def get_settings():
+    """
+    Note that during plugin startup, plugins can't call most `sublime` methods, including `load_settings`.
+
+    [See more here](https://www.sublimetext.com/docs/api_reference.html#plugin-lifecycle).
+    """
+    return sublime.load_settings(SETTINGS_FILENAME)
+
+
+def get_settings_dict():
+    return cast(SettingsDict, get_settings().to_dict())
+
+
+def get_language_name_to_scopes():
+    settings_d = get_settings_dict().get("language_name_to_scopes") or {}
+    return {**LANGUAGE_NAME_TO_SCOPES, **settings_d}
+
+
+def get_scope_to_language_name():
+    scope_to_language_name: dict[ScopeType, str] = {}
+
+    language_name_to_scopes = get_language_name_to_scopes()
+    for language_name, scopes in language_name_to_scopes.items():
+        for scope in scopes:
+            scope_to_language_name[scope] = language_name
+    return scope_to_language_name
+
+
+def get_language_name_to_org_and_repo():
+    settings_d = get_settings_dict().get("language_name_to_org_and_repo") or {}
+    return {**LANGUAGE_NAME_TO_ORG_AND_REPO, **settings_d}
+
+
+def get_language_name_to_parser_path():
+    settings_d = get_settings_dict().get("language_name_to_parser_path") or {}
+    return {**LANGUAGE_NAME_TO_PARSER_PATH, **settings_d}

@@ -42,7 +42,7 @@ from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from shutil import rmtree
 from threading import Thread
-from typing import TYPE_CHECKING, List, TypedDict, cast
+from typing import TYPE_CHECKING, TypedDict
 
 import sublime
 import sublime_plugin
@@ -51,14 +51,17 @@ from sublime import View
 from .src.utils import (
     BUILD_PATH,
     DEPS_PATH,
-    LANGUAGE_NAME_TO_ORG_AND_REPO,
-    LANGUAGE_NAME_TO_PARSER_PATH,
-    LANGUAGE_NAME_TO_SCOPES,
     LIB_PATH,
     PROJECT_ROOT,
-    SCOPE_TO_LANGUAGE_NAME,
+    SETTINGS_FILENAME,
     ScopeType,
     add_path,
+    get_language_name_to_org_and_repo,
+    get_language_name_to_parser_path,
+    get_language_name_to_scopes,
+    get_scope_to_language_name,
+    get_settings,
+    get_settings_dict,
     log,
 )
 
@@ -66,8 +69,7 @@ if TYPE_CHECKING:
     from tree_sitter import Language, Parser, Tree
 
 TREE_SITTER_BINDINGS_VERSION = "0.20.2"
-PROJECT_REPO = "https://github.com/sublime-treesitter/treesitter"
-SETTINGS_FILENAME = "TreeSitter.sublime-settings"
+PROJECT_REPO = "https://github.com/sublime-treesitter/TreeSitter"
 
 MAX_CACHED_TREES = 16
 SCOPE_TO_LANGUAGE: dict[ScopeType, Language] = {}
@@ -90,15 +92,6 @@ class TreeDict(TypedDict):
 #
 # Code for installing tree sitter, and installing/building languages
 #
-
-
-def get_settings():
-    """
-    Note that during plugin startup, plugins can't call most `sublime` methods, including `load_settings`.
-
-    [See more here](https://www.sublimetext.com/docs/api_reference.html#plugin-lifecycle).
-    """
-    return sublime.load_settings(SETTINGS_FILENAME)
 
 
 def install_tree_sitter(pip_path: str):
@@ -128,22 +121,20 @@ def get_so_file(language_name: str):
     return f"language-{language_name}.so"
 
 
-def get_language_names_from_settings():
-    return cast(List[str], get_settings().get("installed_languages"))
-
-
 def clone_languages():
     """
     Clone language repos from which language `.so` files can be built.
     """
-    language_names = get_language_names_from_settings()
+    language_names = get_settings_dict()["installed_languages"]
     files = set(f for f in os.listdir(BUILD_PATH))
+    language_name_to_org_and_repo = get_language_name_to_org_and_repo()
+
     for name in set(language_names):
-        if name not in LANGUAGE_NAME_TO_ORG_AND_REPO:
+        if name not in language_name_to_org_and_repo:
             log(f'"{name}" language is not supported, read more at {PROJECT_REPO}')
             continue
 
-        org_and_repo = LANGUAGE_NAME_TO_ORG_AND_REPO[name]
+        org_and_repo = language_name_to_org_and_repo[name]
         _, repo = org_and_repo.split("/")
         if repo in files:
             # We've already cloned this repo
@@ -161,19 +152,22 @@ def build_languages():
 
     Note: `installed_languages` specified in `TreeSitter.sublime-settings`, `python` installed by default.
     """
-    language_names = get_language_names_from_settings()
-    python_path = cast(str, get_settings().get("python_path"))
+    settings_dict = get_settings_dict()
+    language_names = settings_dict["installed_languages"]
+    python_path = settings_dict["python_path"]
 
     files = set(f for f in os.listdir(BUILD_PATH))
+    language_name_to_parser_path = get_language_name_to_parser_path()
+
     for name in set(language_names):
         if (so_file := get_so_file(name)) in files:
             # We've already built this .so file
             continue
 
-        if name not in LANGUAGE_NAME_TO_PARSER_PATH:
+        if name not in language_name_to_parser_path:
             continue
 
-        path = LANGUAGE_NAME_TO_PARSER_PATH[name]
+        path = language_name_to_parser_path[name]
         log(f"building {name} language from files at {path}", with_status=True)
         subprocess.run(
             [
@@ -193,22 +187,24 @@ def instantiate_languages():
     """
     from tree_sitter import Language
 
-    language_names = get_language_names_from_settings()
+    language_names = get_settings_dict()["installed_languages"]
     files = set(f for f in os.listdir(BUILD_PATH))
+    language_name_to_scopes = get_language_name_to_scopes()
+
     for name in set(language_names):
-        if name not in LANGUAGE_NAME_TO_SCOPES:
+        if name not in language_name_to_scopes:
             continue
 
         if (so_file := get_so_file(name)) not in files:
             continue
 
         # We've already instantiated this language, no need to do it again
-        if all(scope in SCOPE_TO_LANGUAGE for scope in LANGUAGE_NAME_TO_SCOPES[name]):
+        if all(scope in SCOPE_TO_LANGUAGE for scope in language_name_to_scopes[name]):
             continue
 
         language = Language(str(BUILD_PATH / so_file), name)
 
-        for scope in LANGUAGE_NAME_TO_SCOPES[name]:
+        for scope in language_name_to_scopes[name]:
             SCOPE_TO_LANGUAGE[scope] = language
 
 
@@ -281,6 +277,13 @@ def get_edit(
         new_end_point: tuple[int, int],
     ):
     ```
+
+    ---
+
+    Other references:
+
+    - https://github.com/tree-sitter/tree-sitter/issues/1792
+    - https://github.com/tree-sitter/tree-sitter/issues/210
     """
     changed_s = s
 
@@ -441,14 +444,14 @@ def plugin_loaded():
     log(f'Python bindings installed at "{DEPS_PATH}"')
     log(f'language repos and .so files installed at "{BUILD_PATH}"')
 
-    settings = get_settings()
+    settings_dict = get_settings_dict()
 
-    python_path = cast(str, settings.get("python_path"))
+    python_path = settings_dict["python_path"]
     if not python_path:
         log("ERROR, `python_path` must be set")
         return
 
-    pip_path = cast(str, settings.get("pip_path"))
+    pip_path = settings_dict["pip_path"]
     if not pip_path:
         head, _ = os.path.split(python_path)
         pip_path = str(Path(head) / "pip")
@@ -530,7 +533,7 @@ class TreeSitterTextChangeListener(sublime_plugin.TextChangeListener):
     """
 
     def __init__(self, *args, **kwargs):
-        self.debug = bool(get_settings().get("debug", False))
+        self.debug: bool = get_settings_dict().get("debug") or False
         super().__init__(*args, **kwargs)
 
     @property
@@ -587,7 +590,7 @@ class TreeSitterTextChangeListener(sublime_plugin.TextChangeListener):
 
 
 def get_instantiated_language_names():
-    return set(SCOPE_TO_LANGUAGE_NAME[scope] for scope in SCOPE_TO_LANGUAGE)
+    return set(get_scope_to_language_name()[scope] for scope in SCOPE_TO_LANGUAGE)
 
 
 def remove_language(language: str):
@@ -595,7 +598,7 @@ def remove_language(language: str):
     - Remove language repo and .so file from disk
     - Remove `Language` instance from `SCOPE_TO_LANGUAGE`
     """
-    org_and_repo = LANGUAGE_NAME_TO_ORG_AND_REPO.get(language)
+    org_and_repo = get_language_name_to_org_and_repo().get(language)
     if org_and_repo:
         _, repo = org_and_repo.split("/")
         try:
@@ -609,7 +612,7 @@ def remove_language(language: str):
     except Exception as e:
         log(f"error removing {so_file} for {language}: {e}")
 
-    for scope in LANGUAGE_NAME_TO_SCOPES.get(language, []):
+    for scope in get_language_name_to_scopes().get(language, []):
         SCOPE_TO_LANGUAGE.pop(scope, None)
 
 
@@ -621,12 +624,13 @@ class TreeSitterSelectLanguageMixin:
         Allow user to select from installed and uninstalled languages in quick panel. Render language for the active
         view's scope as first option.
         """
-        available_languages = sorted(list(LANGUAGE_NAME_TO_SCOPES.keys()))
+        available_languages = sorted(list(get_language_name_to_scopes().keys()))
         instantiated_languages = get_instantiated_language_names()
 
         view = self.window.active_view()
         scope = get_scope(view) if view else None
-        active_language = SCOPE_TO_LANGUAGE_NAME[scope] if scope in SCOPE_TO_LANGUAGE_NAME else None
+        scope_to_language_name = get_scope_to_language_name()
+        active_language = scope_to_language_name[scope] if scope in scope_to_language_name else None
 
         if active_language in available_languages:
             idx = available_languages.index(active_language)
@@ -657,7 +661,7 @@ class TreeSitterInstallLanguageCommand(TreeSitterSelectLanguageMixin, sublime_pl
         language = self.languages[idx]
 
         settings = get_settings()
-        languages = get_language_names_from_settings()
+        languages = get_settings_dict()["installed_languages"]
         if language not in languages:
             languages.append(language)
 
@@ -679,7 +683,7 @@ class TreeSitterRemoveLanguageCommand(TreeSitterSelectLanguageMixin, sublime_plu
         language = self.languages[idx]
 
         settings = get_settings()
-        languages = get_language_names_from_settings()
+        languages = get_settings_dict()["installed_languages"]
         while language in languages:
             languages.remove(language)
 

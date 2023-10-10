@@ -32,7 +32,7 @@
                   "bash",
                   "vue",
                   "svelte",
-                  "html",
+                  "html"
                 ]
               },
               "markdownDescription": "Run `TreeSitter: Install Language` to see supported languages"
@@ -45,9 +45,30 @@
               "type": "string",
               "markdownDescription": "Inferred from `python_path` if left blank"
             },
+            "language_name_to_scopes": {
+              "type": "object",
+              "patternProperties": {
+                ".*": { "type": "array", "items": {"type": "string"} }
+              },
+              "markdownDescription": "Override or extend which languages apply to which Sublime Text scopes, see [src/utils.py](https://github.com/sublime-treesitter/TreeSitter/blob/main/src/utils.py)"
+            },
+            "language_name_to_org_and_repo": {
+              "type": "object",
+              "patternProperties": {
+                ".*": { "type": "string" }
+              },
+              "markdownDescription": "Override or extend lookup dict with Tree-sitter grammar repos, see [src/utils.py](https://github.com/sublime-treesitter/TreeSitter/blob/main/src/utils.py)"
+            },
+            "language_name_to_parser_path": {
+              "type": "object",
+              "patternProperties": {
+                ".*": { "type": "string" }
+              },
+              "markdownDescription": "Overrides for special Tree-sitter grammar repos in which `parser.c` isn't at `src/parser.c`, see [src/utils.py](https://github.com/sublime-treesitter/TreeSitter/blob/main/src/utils.py)"
+            },
             "debug": {
               "type": "boolean",
-              "markdownDescription": "Enables debug logging and assertions; has non-zero performance cost, for developers only"
+              "markdownDescription": "Enable debug logging and assertions; has non-zero performance cost, for developers only"
             }
           },
           "additionalProperties": false,

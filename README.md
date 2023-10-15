@@ -18,11 +18,12 @@ Sublime `TreeSitter` does the following:
     - Subscribing to tree changes in any buffer in real time using `sublime_plugin.EventListener`
     - Getting a tree from a string of code
     - Querying a tree, walking a tree
+    - Getting a node from a point or selection, getting a region from a node
 
 ## Installation
 
 - Install `TreeSitter` from Package Control
-- Go to `TreeSitter: Settings`, and set `python_path` to point to a Python 3.8 executable on your machine
+- Go to `TreeSitter: Settings`, and set `python_path` to a Python 3.8 executable on your machine
 - Install new languages with `TreeSitter: Install Language`
     - `python` and `json` installed by default
 

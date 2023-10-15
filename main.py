@@ -17,7 +17,7 @@ TreeSitter does the following:
     - Subscribing to tree changes in any buffer in real time using `sublime_plugin.EventListener`
     - Getting a tree from a string of code
     - Querying a tree or node, walking a tree or node
-    - Getting Sublime regions spanned by nodes, getting node(s) spanned by regions
+    - Getting a node from a point or selection, getting a region from a node
 
 It's easy to build Tree-sitter plugins on top of this one, for "structural" editing, selection, navigation, code
 folding, code maps… See e.g. https://zed.dev/blog/syntax-aware-editing for ideas. It's performant and doesn't block the
@@ -26,6 +26,7 @@ main thread.
 It has the following limitations:
 
 - It doesn't support nested syntax trees, e.g. JS code in `<script>` tags in HTML docs
+    - Ideas on how to do this: https://www.gnu.org/software/emacs/manual/html_node/elisp/Multiple-Languages.html
 - It only supports source code encoded with ASCII / UTF-8 (Tree-sitter also supports UTF-16)
 - Due to limitations in Sublime's bundled Python, it requires an external Python 3.8 executable (see settings)
 - Due to how syntax highlighting works in Sublime, it can't be used for syntax highlighting
@@ -57,6 +58,7 @@ from .src.utils import (
     SETTINGS_FILENAME,
     ScopeType,
     add_path,
+    byte_offset,
     get_language_name_to_org_and_repo,
     get_language_name_to_parser_path,
     get_language_name_to_scopes,
@@ -221,24 +223,6 @@ def check_scope(scope: str | None):
     return scope
 
 
-def byte_offset(point: int, s: str):
-    """
-    Convert a Sublime [Point](https://www.sublimetext.com/docs/api_reference.html#sublime.Point), the offset from the
-    beginning of the buffer in UTF-8 code points, to a byte offset. For UTF-8, byte is the same as "code unit".
-
-    Tree-sitter works with code unit offsets, not code point offsets. If source code is ASCII it makes no difference,
-    but testing shows that making edits with code points instead of code units corrupts trees for non-ASCII source.
-
-    ---
-
-    Note that Sublime (confusingly) calls code points offsets "character" offsets. Multiple code points can result in
-    just one user-perceived character, e.g. this one: שָׁ
-
-    More info here: http://utf8everywhere.org/, https://tonsky.me/blog/unicode/
-    """
-    return len(s[:point].encode())
-
-
 def get_edit(
     change: sublime.TextChange,
     s: str,
@@ -247,9 +231,9 @@ def get_edit(
     """
     Args:
 
-    - s: Buffer text before text change was applied
-    - change: TextChange
-    - should_change_s: Should we change s? Not doing so for final TextChange in "group" is a performance optimization
+    - `s`: Buffer text before text change was applied
+    - `change`: TextChange
+    - `should_change_s`: Should we change s? Not doing so for final TextChange in "group" is a performance optimization
 
     Returns:
 
@@ -279,9 +263,7 @@ def get_edit(
     ):
     ```
 
-    ---
-
-    Other references:
+    References:
 
     - https://github.com/tree-sitter/tree-sitter/issues/1792
     - https://github.com/tree-sitter/tree-sitter/issues/210

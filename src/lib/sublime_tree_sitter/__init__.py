@@ -6,16 +6,33 @@ Example usage: `from sublime_tree_sitter import get_tree_dict`
 from __future__ import annotations
 
 import copy
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Tuple
 
+import sublime
 from TreeSitter.main import BUFFER_ID_TO_TREE, SCOPE_TO_LANGUAGE
-from TreeSitter.src.utils import ScopeType
+from TreeSitter.src.utils import ScopeType, byte_offset, maybe_none
 
 if TYPE_CHECKING:
     # So this module can be imported before `tree_sitter` installed
     from tree_sitter import Node, Parser, Tree
 
-__all__ = ["get_tree_dicts", "get_tree_dict", "get_tree_from_code", "query_tree", "walk_tree"]
+__all__ = [
+    "get_tree_dicts",
+    "get_tree_dict",
+    "get_tree_from_code",
+    "query_tree",
+    "walk_tree",
+    "get_node_at_point",
+    "get_node_spanning_region",
+    "get_region_from_node",
+    "get_view_from_buffer_id",
+]
+
+
+def get_view_from_buffer_id(buffer_id: int) -> sublime.View | None:
+    buffer = sublime.Buffer(buffer_id)
+    view = buffer.primary_view()
+    return view if maybe_none(view.id()) is not None else None
 
 
 def get_tree_dicts():
@@ -44,6 +61,8 @@ def query_tree(scope: ScopeType, query_s: str, tree_or_node: Tree | Node):
 
     See https://github.com/tree-sitter/py-tree-sitter#pattern-matching
     """
+    from tree_sitter import Tree
+
     if scope not in SCOPE_TO_LANGUAGE:
         return None
     language = SCOPE_TO_LANGUAGE[scope]
@@ -77,3 +96,115 @@ def walk_tree(tree_or_node: Tree | Node):
 
             if cursor.goto_next_sibling():
                 retracing = False
+
+
+def get_node_at_point(point: int, buffer_id: int) -> Node | None:
+    """
+    Args:
+
+    - `point`: Offset in UTF-8 code points from beginning of buffer
+    - `buffer_id`: Buffer id for buffer that contains point
+
+    We try to return the "smallest" node that contains point, where "contains" means the node's start point is less
+    than or equal to point, and the node's end point is greater than or equal to point.
+
+    If the only node containing point is the tree's root node, or if we have no tree for buffer id, we return `None`.
+
+    ## References
+
+    - [Emacs](https://www.gnu.org/software/emacs/manual/html_node/elisp/Retrieving-Nodes.html)
+    - [Neovim](https://github.com/nvim-treesitter/nvim-treesitter/blob/master/lua/nvim-treesitter/ts_utils.lua)
+    """
+
+    tree_dict = BUFFER_ID_TO_TREE.get(buffer_id)
+    if not tree_dict:
+        return None
+
+    s = tree_dict["s"]
+    return get_node_at_point_from_tree(byte_offset(point, s), tree_dict["tree"].root_node)
+
+
+def contains(node: Node, p: int):
+    """
+    Does `node` contain byte position `p`?
+    """
+    return node.start_byte <= p and node.end_byte >= p
+
+
+def get_node_at_point_from_tree(p: int, tree_or_node: Tree | Node) -> Node | None:
+    """
+    Helper function for `get_node_at_point`.
+
+    Args:
+
+    - `p`: Offset in bytes from beginning of buffer
+    - `tree_or_node`: Under which to look for most granular node containing point
+    """
+    from tree_sitter import Tree
+
+    node = tree_or_node.root_node if isinstance(tree_or_node, Tree) else tree_or_node
+    children = node.children
+
+    if contains(node, p):
+        if not children:
+            # This is a leaf node, and it contains p, so we're done
+            return node
+        # Node contains p, but we can recurse into children to get more specific
+        return get_node_at_point_from_tree(p, children[0])
+
+    next_sibling = node.next_sibling
+    siblings_cannot_contain_point = node.start_byte > p or (node.end_byte < p and not next_sibling)
+
+    if siblings_cannot_contain_point:
+        parent = node.parent
+        if parent and parent.parent and contains(parent, p):
+            return parent
+
+    else:
+        if next_sibling:
+            return get_node_at_point_from_tree(p, next_sibling)
+
+    return None
+
+
+def get_node_spanning_region(region: sublime.Region | Tuple[int, int], buffer_id: int) -> Node | None:
+    """
+    Like `get_node_at_point`, but gets "smallest" node spanning region, s.t. node's start point is less than or equal to
+    region's start point, and node's end point is greater than or equal region's end point.
+    """
+    tree_dict = BUFFER_ID_TO_TREE.get(buffer_id)
+    if not tree_dict:
+        return None
+
+    region = region if isinstance(region, sublime.Region) else sublime.Region(*region)
+    root_node = tree_dict["tree"].root_node
+    s = tree_dict["s"]
+
+    start_node = get_node_at_point_from_tree(byte_offset(region.begin(), s), root_node)
+    end_node = get_node_at_point_from_tree(byte_offset(region.end(), s), root_node)
+
+    while True:
+        if not start_node or not end_node or not start_node.parent or not end_node.parent:
+            return None
+
+        if start_node.id == end_node.id:
+            return start_node
+
+        start_node = start_node.parent
+        end_node = end_node.parent
+
+
+def get_region_from_node(node: Node, buffer_id_or_view: int | sublime.View, reverse = False) -> sublime.Region:
+    """
+    Get `sublime.Region` that exactly spans `node`, for specified `buffer_id_or_view`.
+
+    See [View.text_point_utf8](https://www.sublimetext.com/docs/api_reference.html#sublime.View.text_point_utf8).
+    """
+    view = get_view_from_buffer_id(buffer_id_or_view) if isinstance(buffer_id_or_view, int) else buffer_id_or_view
+
+    if view is None:
+        raise RuntimeError(f"Tree-sitter: {buffer_id_or_view} does not exist")
+
+    p_a = view.text_point_utf8(*node.start_point)
+    p_b = view.text_point_utf8(*node.end_point)
+    return sublime.Region(a=p_a if not reverse else p_b, b=p_b if not reverse else p_a)

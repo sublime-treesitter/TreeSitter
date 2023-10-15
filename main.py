@@ -16,7 +16,8 @@ TreeSitter does the following:
     - Getting a Tree-sitter `Tree` by its buffer id, getting trees for all tracked buffers
     - Subscribing to tree changes in any buffer in real time using `sublime_plugin.EventListener`
     - Getting a tree from a string of code
-    - Querying a tree, walking a tree
+    - Querying a tree or node, walking a tree or node
+    - Getting Sublime regions spanned by nodes, getting node(s) spanned by regions
 
 It's easy to build Tree-sitter plugins on top of this one, for "structural" editing, selection, navigation, code
 folding, code maps… See e.g. https://zed.dev/blog/syntax-aware-editing for ideas. It's performant and doesn't block the

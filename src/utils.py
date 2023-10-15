@@ -69,9 +69,15 @@ ScopeType = Literal[
     "source.json.sublime.commands",
     "source.json.sublime.theme",
     "source.shell.bash",
+    "source.Kotlin",
+    "source.julia",
+    "source.haskell",
+    "source.clojure",
+    "source.elixir",
     "text.html.vue",
     "text.html.svelte",
     "text.html.basic",
+    "text.html.markdown",
 ]
 
 LANGUAGE_NAME_TO_SCOPES: Dict[str, List[ScopeType]] = {
@@ -95,6 +101,11 @@ LANGUAGE_NAME_TO_SCOPES: Dict[str, List[ScopeType]] = {
     "cpp": ["source.c++"],
     "c_sharp": ["source.cs"],
     "scala": ["source.scala"],
+    "kotlin": ["source.Kotlin"],
+    "julia": ["source.julia"],
+    "haskell": ["source.haskell"],
+    "clojure": ["source.clojure"],
+    "elixir": ["source.elixir"],
     "toml": ["source.toml"],
     "yaml": ["source.yaml"],
     "json": [
@@ -108,6 +119,7 @@ LANGUAGE_NAME_TO_SCOPES: Dict[str, List[ScopeType]] = {
     "vue": ["text.html.vue"],
     "svelte": ["text.html.svelte"],
     "html": ["text.html.basic"],
+    "markdown": ["text.html.markdown"],
 }
 
 """
@@ -143,6 +155,12 @@ LANGUAGE_NAME_TO_ORG_AND_REPO = {
     "vue": "ikatyang/tree-sitter-vue",
     "svelte": "Himujjal/tree-sitter-svelte",
     "html": "tree-sitter/tree-sitter-html",
+    "markdown": "ikatyang/tree-sitter-markdown",
+    "kotlin": "fwcd/tree-sitter-kotlin",
+    "julia": "tree-sitter/tree-sitter-julia",
+    "haskell": "tree-sitter/tree-sitter-haskell",
+    "clojure": "sogaiu/tree-sitter-clojure",
+    "elixir": "elixir-lang/tree-sitter-elixir",
 }
 
 LANGUAGE_NAME_TO_PARSER_PATH: dict[str, str] = {}

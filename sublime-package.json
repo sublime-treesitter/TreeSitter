@@ -39,11 +39,11 @@
             },
             "python_path": {
               "type": "string",
-              "markdownDescription": "Path to Python 3.8 executable, required for installing `tree_sitter` bindings and building languages"
+              "markdownDescription": "Path to Python 3.8 executable, required for building languages `.so` files"
             },
             "pip_path": {
               "type": "string",
-              "markdownDescription": "Inferred from `python_path` if left blank"
+              "markdownDescription": "Required for installing `tree_sitter` bindings, inferred from `python_path` if left blank"
             },
             "language_name_to_scopes": {
               "type": "object",

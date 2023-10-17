@@ -20,8 +20,8 @@ TreeSitter does the following:
     - Getting a node from a point or selection, getting a region from a node
 
 It's easy to build Tree-sitter plugins on top of this one, for "structural" editing, selection, navigation, code
-folding, code maps… See e.g. https://zed.dev/blog/syntax-aware-editing for ideas. It's performant and doesn't block the
-main thread.
+folding, symbol maps… See e.g. https://zed.dev/blog/syntax-aware-editing for ideas. It's performant and doesn't block
+the main thread.
 
 It has the following limitations:
 
@@ -29,6 +29,9 @@ It has the following limitations:
     - Ideas on how to do this: https://www.gnu.org/software/emacs/manual/html_node/elisp/Multiple-Languages.html
 - It only supports source code encoded with ASCII / UTF-8 (Tree-sitter also supports UTF-16)
 - Due to limitations in Sublime's bundled Python, it requires an external Python 3.8 executable (see settings)
+    - Calling `build_library` raises e.g. `ModuleNotFoundError: No module named '_sysconfigdata__darwin_darwin'`
+    - This module is built dynamically, and doesn't exist in Python bundled with Sublime Text
+    - Alternative is pre-compile and vendor .so files, e.g. `build/language-python.so`, for all platforms and languages
 - Due to how syntax highlighting works in Sublime, it can't be used for syntax highlighting
     - See e.g. https://github.com/sublimehq/sublime_text/issues/817
 - It breaks if the package is reloaded, which is a nuisance if you're working on this codebase
@@ -396,6 +399,8 @@ def parse_view(parser: Parser, view: View, view_text: str, publish_update: bool 
     if publish_update:
         publish_tree_update(view.window(), buffer_id=buffer_id, scope=scope)
     trim_cached_trees()
+
+    return tree
 
 
 def install_languages():

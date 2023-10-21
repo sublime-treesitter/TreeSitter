@@ -486,6 +486,14 @@ class TreeSitterEventListener(sublime_plugin.EventListener):
 
         sublime.set_timeout_async(callback=cb, delay=0)
 
+    def on_close(self, view: View):
+        """
+        Called when a view is closed. If there are no other views into view's buffer, stop tracking buffer, because
+        buffer is "dead". This way clients don't accidentally use them.
+        """
+        if not view.clones():
+            BUFFER_ID_TO_TREE.pop(view.buffer().id(), None)
+
     def on_activated(self, view: View):
         """
         Called when view gains focus. Ensures that we parse buffers on Sublime Text startup, where `on_load` callbacks

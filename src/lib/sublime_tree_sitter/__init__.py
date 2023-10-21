@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from tree_sitter import Node, Parser, Tree
 
 __all__ = [
+    "get_view_from_buffer_id",
     "get_tree_dicts",
     "get_tree_dict",
     "get_tree_from_code",
@@ -25,7 +26,6 @@ __all__ = [
     "get_node_at_point",
     "get_node_spanning_region",
     "get_region_from_node",
-    "get_view_from_buffer_id",
 ]
 
 

@@ -177,7 +177,7 @@ def build_languages():
         log(f"building {name} language from files at {path}", with_status=True)
         subprocess.run(
             [
-                python_path,
+                os.path.expanduser(python_path),
                 str(PROJECT_ROOT / "src" / "build.py"),
                 str(BUILD_PATH / path),
                 str(BUILD_PATH / so_file),
@@ -444,7 +444,7 @@ def plugin_loaded():
         head, _ = os.path.split(python_path)
         pip_path = str(Path(head) / "pip")
 
-    install_tree_sitter(pip_path)
+    install_tree_sitter(os.path.expanduser(pip_path))
     instantiate_languages()
     Thread(target=install_languages).start()
 
@@ -519,10 +519,10 @@ class TreeSitterEventListener(sublime_plugin.EventListener):
 
 class TreeSitterTextChangeListener(sublime_plugin.TextChangeListener):
     """
-    Under the hood, ST synchronously puts any async callbacks onto a queue. It asynchronously handles them in FIFO order
-    in a separate thread. All async callbacks are handled by the same thread. Sublime source code suggests this,
-    testing with `time.sleep` confirms it. This ensures there are no races between "text change" events (almost always
-    edit) and "load" (always parse).
+    Under the hood, ST synchronously puts async callbacks onto a queue. It asynchronously handles them in FIFO order in
+    a separate thread. All async callbacks are handled by the same thread. Sublime source code suggests this, testing
+    with `time.sleep` confirms it. This ensures there are no races between "text change" events (almost always edit)
+    and "load" (always parse).
 
     When a text change occurs, we get its buffer and its syntax, look up the tree and metadata, and update/create the
     tree as necessary. Every listener instance is bound to a buffer, so we know in which buffer text changes occur.

@@ -6,7 +6,7 @@ Example usage: `from sublime_tree_sitter import get_tree_dict`
 from __future__ import annotations
 
 import copy
-from typing import TYPE_CHECKING, Tuple
+from typing import TYPE_CHECKING, List, Tuple
 
 import sublime
 from TreeSitter.main import BUFFER_ID_TO_TREE, SCOPE_TO_LANGUAGE
@@ -26,6 +26,7 @@ __all__ = [
     "get_node_at_point",
     "get_node_spanning_region",
     "get_region_from_node",
+    "get_larger_ancestor",
 ]
 
 
@@ -167,6 +168,19 @@ def get_node_at_point_from_tree(p: int, tree_or_node: Tree | Node) -> Node | Non
     return None
 
 
+def get_ancestors(node: Node) -> List[Node]:
+    """
+    Get all ancestors of node, including node itself.
+    """
+    nodes: List[Node] = []
+    current_node: Node | None = node
+
+    while current_node:
+        nodes.append(current_node)
+        current_node = current_node.parent
+    return nodes
+
+
 def get_node_spanning_region(region: sublime.Region | Tuple[int, int], buffer_id: int) -> Node | None:
     """
     Like `get_node_at_point`, but gets "smallest" node spanning region, s.t. node's start point is less than or equal to
@@ -183,18 +197,21 @@ def get_node_spanning_region(region: sublime.Region | Tuple[int, int], buffer_id
     start_node = get_node_at_point_from_tree(byte_offset(region.begin(), s), root_node)
     end_node = get_node_at_point_from_tree(byte_offset(region.end(), s), root_node)
 
-    while True:
-        if not start_node or not end_node or not start_node.parent or not end_node.parent:
-            return None
+    if not start_node or not end_node:
+        return None
 
-        if start_node.id == end_node.id:
-            return start_node
+    start_nodes = get_ancestors(start_node)
+    end_nodes = get_ancestors(end_node)
 
-        start_node = start_node.parent
-        end_node = end_node.parent
+    for sn in start_nodes:
+        for en in end_nodes:
+            if sn.id == en.id:
+                return sn
+
+    return None
 
 
-def get_region_from_node(node: Node, buffer_id_or_view: int | sublime.View, reverse = False) -> sublime.Region:
+def get_region_from_node(node: Node, buffer_id_or_view: int | sublime.View, reverse=False) -> sublime.Region:
     """
     Get `sublime.Region` that exactly spans `node`, for specified `buffer_id_or_view`.
 
@@ -208,3 +225,22 @@ def get_region_from_node(node: Node, buffer_id_or_view: int | sublime.View, reve
     p_a = view.text_point_utf8(*node.start_point)
     p_b = view.text_point_utf8(*node.end_point)
     return sublime.Region(a=p_a if not reverse else p_b, b=p_b if not reverse else p_a)
+
+
+def get_size(node: Node) -> int:
+    """
+    Get size of node in bytes.
+    """
+    return node.end_byte - node.start_byte
+
+
+def get_larger_ancestor(node: Node) -> Node | None:
+    """
+    Get "first" ancestor of node that's larger than this node.
+    """
+    while True:
+        if not node.parent:
+            return None
+        if get_size(node.parent) > get_size(node):
+            return node.parent
+        node = node.parent

@@ -27,6 +27,7 @@ __all__ = [
     "get_node_spanning_region",
     "get_region_from_node",
     "get_larger_ancestor",
+    "get_larger_region",
 ]
 
 
@@ -244,3 +245,26 @@ def get_larger_ancestor(node: Node) -> Node | None:
         if get_size(node.parent) > get_size(node):
             return node.parent
         node = node.parent
+
+
+def get_larger_region(region: sublime.Region, view: sublime.View, reverse: bool = True) -> sublime.Region | None:
+    """
+    Useful for e.g. expanding selection. If larger region than `region` can be found, returns larger region, and node to
+    which it corresponds.
+
+    Does not return region corresponding to root node, i.e. region that spans entire buffer, because there are easier
+    ways to do this…
+    """
+    node = get_node_spanning_region(region, view.buffer_id())
+
+    if not node or not node.parent:
+        return None
+
+    new_region = get_region_from_node(node, view, reverse=reverse)
+    if len(new_region) > len(region):
+        return new_region
+
+    ancestor = get_larger_ancestor(node) or node.parent
+    if not ancestor.parent:
+        return None
+    return get_region_from_node(ancestor, view, reverse=reverse)

@@ -79,12 +79,14 @@ def walk_tree(tree_or_node: Tree | Node):
     See https://github.com/tree-sitter/py-tree-sitter/issues/33#issuecomment-864557166
     """
     cursor = tree_or_node.walk()
+    depth = 0
 
     reached_root = False
     while not reached_root:
-        yield cursor.node
+        yield cursor.node, depth
 
         if cursor.goto_first_child():
+            depth += 1
             continue
 
         if cursor.goto_next_sibling():
@@ -96,6 +98,7 @@ def walk_tree(tree_or_node: Tree | Node):
                 retracing = False
                 reached_root = True
 
+            depth -= 1
             if cursor.goto_next_sibling():
                 retracing = False
 

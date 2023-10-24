@@ -63,6 +63,7 @@ class SettingsDict(TypedDict):
     language_name_to_scopes: Dict[str, List[ScopeType]] | None
     language_name_to_org_and_repo: Dict[str, str] | None
     language_name_to_parser_path: Dict[str, str] | None
+    language_name_to_debounce_ms: Dict[str, float] | None
     debug: bool | None
 
 
@@ -213,6 +214,10 @@ def get_settings_dict():
 def get_language_name_to_scopes():
     settings_d = get_settings_dict().get("language_name_to_scopes") or {}
     return {**LANGUAGE_NAME_TO_SCOPES, **settings_d}
+
+
+def get_language_name_to_debounce_ms():
+    return get_settings_dict().get("language_name_to_debounce_ms") or {}
 
 
 def get_scope_to_language_name():

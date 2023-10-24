@@ -62,6 +62,7 @@ from .src.utils import (
     ScopeType,
     add_path,
     byte_offset,
+    get_language_name_to_debounce_ms,
     get_language_name_to_org_and_repo,
     get_language_name_to_parser_path,
     get_language_name_to_scopes,
@@ -529,6 +530,8 @@ class TreeSitterTextChangeListener(sublime_plugin.TextChangeListener):
     """
 
     def __init__(self, *args, **kwargs):
+        self.debounce_ms: int | None = None
+        self.last_text_changed_s = 0
         self.debug: bool = get_settings_dict().get("debug") or False
         super().__init__(*args, **kwargs)
 
@@ -546,8 +549,16 @@ class TreeSitterTextChangeListener(sublime_plugin.TextChangeListener):
         if not (scope := check_scope(scope)):
             return
 
+        if self.debounce_ms is None:
+            scope_to_language_name = get_scope_to_language_name()
+            language_name_to_debounce_ms = get_language_name_to_debounce_ms()
+            self.debounce_ms = round(language_name_to_debounce_ms.get(scope_to_language_name[scope], 0))
+
         buffer_id = self.buffer.id()
         view_text = get_view_text(view)
+
+        self.last_text_changed_s = time.monotonic()
+        debounce_ms = self.debounce_ms or 0
 
         def cb():
             """
@@ -557,9 +568,14 @@ class TreeSitterTextChangeListener(sublime_plugin.TextChangeListener):
             So, we handle the text change event in the main UI thread, get the new view text right there, and queue up
             a "background job" with `set_timeout_async` to parse the new tree. This works because `set_timeout_async`
             uses the same queue as the other `_async` methods.
-            """
 
-            if buffer_id not in BUFFER_ID_TO_TREE:
+            Note that some language parsers are so slow they visibly affect UI thread performance. Setting a
+            `debounce_ms` for these languages is recommended.
+            """
+            if buffer_id not in BUFFER_ID_TO_TREE or debounce_ms > 0:
+                dt_s = (time.monotonic() - self.last_text_changed_s) * 1000
+                if dt_s < debounce_ms:
+                    return
                 tree = parse(self.parser, scope, s=view_text)
             else:
                 tree_dict = BUFFER_ID_TO_TREE[buffer_id]
@@ -577,7 +593,7 @@ class TreeSitterTextChangeListener(sublime_plugin.TextChangeListener):
             publish_tree_update(view.window(), buffer_id=buffer_id, scope=scope)
             trim_cached_trees()
 
-        sublime.set_timeout_async(callback=cb, delay=0)
+        sublime.set_timeout_async(callback=cb, delay=debounce_ms + 1 if debounce_ms > 0 else 0)
 
 
 #

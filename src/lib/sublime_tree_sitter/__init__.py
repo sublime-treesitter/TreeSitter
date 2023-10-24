@@ -249,8 +249,7 @@ def get_larger_ancestor(node: Node) -> Node | None:
 
 def get_larger_region(region: sublime.Region, view: sublime.View, reverse: bool = True) -> sublime.Region | None:
     """
-    Useful for e.g. expanding selection. If larger region than `region` can be found, returns larger region, and node to
-    which it corresponds.
+    Useful for e.g. expanding selection. If larger region than `region` can be found, returns larger region.
 
     Does not return region corresponding to root node, i.e. region that spans entire buffer, because there are easier
     ways to do this…

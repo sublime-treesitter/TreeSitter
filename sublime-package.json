@@ -26,13 +26,19 @@
                   "cpp",
                   "c_sharp",
                   "scala",
+                  "kotlin",
+                  "julia",
+                  "haskell",
+                  "clojure",
+                  "elixir",
                   "toml",
                   "yaml",
                   "json",
                   "bash",
                   "vue",
                   "svelte",
-                  "html"
+                  "html",
+                  "markdown",
                 ]
               },
               "markdownDescription": "Run `TreeSitter: Install Language` to see supported languages"
@@ -65,6 +71,13 @@
                 ".*": { "type": "string" }
               },
               "markdownDescription": "Overrides for special Tree-sitter grammar repos in which `parser.c` isn't at `src/parser.c`, see [src/utils.py](https://github.com/sublime-treesitter/TreeSitter/blob/main/src/utils.py)"
+            },
+            "language_name_to_debounce_ms": {
+              "type": "object",
+              "patternProperties": {
+                ".*": { "type": "number" }
+              },
+              "markdownDescription": "Debounce parsing for parsers that are slow"
             },
             "debug": {
               "type": "boolean",

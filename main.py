@@ -465,6 +465,9 @@ class TreeSitterEventListener(sublime_plugin.EventListener):
 
     When a buffer is loaded, reverted, or reloaded, we do a full parse to get its tree, and cache that. This ensures the
     tree matches the buffer text even if this text is edited e.g. outside of ST.
+
+    It would be nice to reparse buffer `on_post_text_command` for "set_file_type" (syntax changes), but text commands
+    run from command the palette aren't caught by event listeners. [This is a serious bug in the plugin API](https://github.com/sublimehq/sublime_text/issues/2234).
     """
 
     @property
@@ -572,13 +575,15 @@ class TreeSitterTextChangeListener(sublime_plugin.TextChangeListener):
             Note that some language parsers are so slow they visibly affect UI thread performance. Setting a
             `debounce_ms` for these languages is recommended.
             """
-            if buffer_id not in BUFFER_ID_TO_TREE or debounce_ms > 0:
+            tree_dict = BUFFER_ID_TO_TREE.get(buffer_id)
+            scope_changed = bool(tree_dict) and tree_dict["scope"] != scope
+
+            if not tree_dict or debounce_ms > 0 or scope_changed:
                 dt_s = (time.monotonic() - self.last_text_changed_s) * 1000
                 if dt_s < debounce_ms:
                     return
                 tree = parse(self.parser, scope, s=view_text)
             else:
-                tree_dict = BUFFER_ID_TO_TREE[buffer_id]
                 tree = edit(
                     self.parser,
                     scope,

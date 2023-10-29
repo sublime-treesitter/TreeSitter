@@ -20,6 +20,7 @@ __all__ = [
     "get_view_from_buffer_id",
     "get_tree_dicts",
     "get_tree_dict",
+    "has_tree",
     "get_tree_from_code",
     "query_tree",
     "walk_tree",
@@ -28,6 +29,7 @@ __all__ = [
     "get_region_from_node",
     "get_larger_ancestor",
     "get_larger_region",
+    "get_size",
 ]
 
 
@@ -44,6 +46,10 @@ def get_tree_dicts():
 def get_tree_dict(buffer_id: int):
     tree = BUFFER_ID_TO_TREE.get(buffer_id)
     return copy.copy(tree) if tree else None
+
+
+def has_tree(buffer_id: int):
+    return buffer_id in BUFFER_ID_TO_TREE
 
 
 def get_tree_from_code(scope: ScopeType, s: str | bytes):
@@ -103,7 +109,7 @@ def walk_tree(tree_or_node: Tree | Node):
                 retracing = False
 
 
-def get_node_at_point(point: int, buffer_id: int) -> Node | None:
+def get_node_at_point(point: int, buffer_id: int, gte: bool = True) -> Node | None:
     """
     Args:
 
@@ -121,22 +127,20 @@ def get_node_at_point(point: int, buffer_id: int) -> Node | None:
     - [Neovim](https://github.com/nvim-treesitter/nvim-treesitter/blob/master/lua/nvim-treesitter/ts_utils.lua)
     """
 
-    tree_dict = BUFFER_ID_TO_TREE.get(buffer_id)
-    if not tree_dict:
+    if not (tree_dict := BUFFER_ID_TO_TREE.get(buffer_id)):
         return None
 
-    s = tree_dict["s"]
-    return get_node_at_point_from_tree(byte_offset(point, s), tree_dict["tree"].root_node)
+    return get_node_at_point_from_tree(byte_offset(point, tree_dict["s"]), tree_dict["tree"].root_node, gte=gte)
 
 
-def contains(node: Node, p: int):
+def contains(node: Node, p: int, gte: bool = True):
     """
     Does `node` contain byte position `p`?
     """
-    return node.start_byte <= p and node.end_byte >= p
+    return node.start_byte <= p and (node.end_byte >= p if gte else node.end_byte > p)
 
 
-def get_node_at_point_from_tree(p: int, tree_or_node: Tree | Node) -> Node | None:
+def get_node_at_point_from_tree(p: int, tree_or_node: Tree | Node, gte: bool = True) -> Node | None:
     """
     Helper function for `get_node_at_point`.
 
@@ -150,24 +154,24 @@ def get_node_at_point_from_tree(p: int, tree_or_node: Tree | Node) -> Node | Non
     node = tree_or_node.root_node if isinstance(tree_or_node, Tree) else tree_or_node
     children = node.children
 
-    if contains(node, p):
+    if contains(node, p, gte):
         if not children:
             # This is a leaf node, and it contains p, so we're done
             return node
         # Node contains p, but we can recurse into children to get more specific
-        return get_node_at_point_from_tree(p, children[0])
+        return get_node_at_point_from_tree(p, children[0], gte)
 
     next_sibling = node.next_sibling
     siblings_cannot_contain_point = node.start_byte > p or (node.end_byte < p and not next_sibling)
 
     if siblings_cannot_contain_point:
         parent = node.parent
-        if parent and parent.parent and contains(parent, p):
+        if parent and parent.parent and contains(parent, p, gte):
             return parent
 
     else:
         if next_sibling:
-            return get_node_at_point_from_tree(p, next_sibling)
+            return get_node_at_point_from_tree(p, next_sibling, gte)
 
     return None
 
@@ -185,6 +189,19 @@ def get_ancestors(node: Node) -> List[Node]:
     return nodes
 
 
+def get_common_ancestor(a: Node, b: Node) -> Node | None:
+    """
+    Find "smallest" node that's an ancestor of both `a` and `b`.
+    """
+    a_nodes = get_ancestors(a)
+    b_nodes = get_ancestors(b)
+
+    for a_node in a_nodes:
+        for b_node in b_nodes:
+            if a_node.id == b_node.id:
+                return a_node
+
+
 def get_node_spanning_region(region: sublime.Region | Tuple[int, int], buffer_id: int) -> Node | None:
     """
     Like `get_node_at_point`, but gets "smallest" node spanning region, s.t. node's start point is less than or equal to
@@ -198,21 +215,26 @@ def get_node_spanning_region(region: sublime.Region | Tuple[int, int], buffer_id
     root_node = tree_dict["tree"].root_node
     s = tree_dict["s"]
 
-    start_node = get_node_at_point_from_tree(byte_offset(region.begin(), s), root_node)
+    start_byte = byte_offset(region.begin(), s)
+    start_node = get_node_at_point_from_tree(start_byte, root_node)
     end_node = get_node_at_point_from_tree(byte_offset(region.end(), s), root_node)
 
     if not start_node or not end_node:
         return None
 
-    start_nodes = get_ancestors(start_node)
-    end_nodes = get_ancestors(end_node)
+    ancestor = get_common_ancestor(start_node, end_node)
+    if next_start_node := get_node_at_point_from_tree(start_byte, root_node, gte=False):
+        other_ancestor = get_common_ancestor(next_start_node, end_node)
 
-    for sn in start_nodes:
-        for en in end_nodes:
-            if sn.id == en.id:
-                return sn
+        if not ancestor:
+            return other_ancestor
 
-    return None
+        if not other_ancestor:
+            return ancestor
+
+        return ancestor if get_size(ancestor) < get_size(other_ancestor) else other_ancestor
+
+    return ancestor
 
 
 def get_region_from_node(node: Node, buffer_id_or_view: int | sublime.View, reverse=False) -> sublime.Region:

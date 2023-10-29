@@ -43,7 +43,7 @@ def byte_offset(point: int, s: str):
     Convert a Sublime [Point](https://www.sublimetext.com/docs/api_reference.html#sublime.Point), the offset from the
     beginning of the buffer in UTF-8 code points, to a byte offset. For UTF-8, byte is the same as "code unit".
 
-    Tree-sitter works with code unit offsets, not code point offsets. If source code is ASCII it makes no difference,
+    Tree-sitter works with code unit offsets, not code point offsets. If source code is ASCII this makes no difference,
     but testing shows that making edits with code points instead of code units corrupts trees for non-ASCII source.
 
     ---

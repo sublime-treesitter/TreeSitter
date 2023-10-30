@@ -33,21 +33,33 @@ __all__ = [
 
 
 def get_view_from_buffer_id(buffer_id: int) -> sublime.View | None:
+    """
+    Utilify function. Ensures `None` returned if a "dead" buffer id passed.
+    """
     buffer = sublime.Buffer(buffer_id)
     view = buffer.primary_view()
     return view if maybe_none(view.id()) is not None else None
 
 
 def get_tree_dicts():
+    """
+    Get all tree dicts being maintained for buffers.
+    """
     return {buffer_id: copy.copy(tree) for buffer_id, tree in BUFFER_ID_TO_TREE.items()}
 
 
 def get_tree_dict(buffer_id: int):
+    """
+    Get tree dict being maintained for this buffer.
+    """
     tree = BUFFER_ID_TO_TREE.get(buffer_id)
     return copy.copy(tree) if tree else None
 
 
 def has_tree(buffer_id: int):
+    """
+    Are we maintaining a tree for this buffer?
+    """
     return buffer_id in BUFFER_ID_TO_TREE
 
 
@@ -110,7 +122,11 @@ def walk_tree(tree_or_node: Tree | Node):
 
 def descendant_for_byte_range(node: Node, start_byte: int, end_byte: int) -> Node | None:
     """
-    Uses undocumented API added in September 2023: https://github.com/tree-sitter/py-tree-sitter/pull/150/files
+    Get the smallest node within the given byte range.
+
+    This API added in September 2023: https://github.com/tree-sitter/py-tree-sitter/pull/150/files
+
+    See also: https://tree-sitter.github.io/tree-sitter/using-parsers#named-vs-anonymous-nodes
     """
     return node.descendant_for_byte_range(start_byte, end_byte)  # type: ignore
 
@@ -130,8 +146,11 @@ def get_ancestors(node: Node) -> list[Node]:
 
 def get_node_spanning_region(region: sublime.Region | Tuple[int, int], buffer_id: int) -> Node | None:
     """
-    Gets "smallest" node spanning region, s.t. node's start point is less than or equal to region's start point, and
+    Get smallest node spanning region, s.t. node's start point is less than or equal to region's start point, and
     node's end point is greater than or equal region's end point.
+
+    If there are two nodes matching a zero-width region, prefer the "deeper" of the two, i.e. the one furthest from the
+    root of the tree.
     """
     tree_dict = BUFFER_ID_TO_TREE.get(buffer_id)
     if not tree_dict:
@@ -194,10 +213,11 @@ def get_larger_ancestor(node: Node) -> Node | None:
 
 def get_ancestor(region: sublime.Region, view: sublime.View) -> Node | None:
     """
-    Useful for e.g. expanding selection. If larger region than `region` can be found, returns larger region.
+    Useful for e.g. expanding selection. Works as follows:
 
-    Does not return region corresponding to root node, i.e. region that spans entire buffer, because there are easier
-    ways to do this…
+    - First, get smallest node spanning `region`
+    - If this node's region is larger than `region`, return node
+    - Else, get "first" ancestor of this node that's larger than this node
     """
     node = get_node_spanning_region(region, view.buffer_id())
 
@@ -208,7 +228,4 @@ def get_ancestor(region: sublime.Region, view: sublime.View) -> Node | None:
     if len(new_region) > len(region):
         return node
 
-    ancestor = get_larger_ancestor(node) or node.parent
-    if not ancestor.parent:
-        return None
-    return ancestor
+    return get_larger_ancestor(node) or node.parent

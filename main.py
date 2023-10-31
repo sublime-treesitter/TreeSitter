@@ -13,11 +13,12 @@ TreeSitter does the following:
 - Installs and builds Tree-sitter languages, e.g. https://github.com/tree-sitter/tree-sitter-python, based on settings
     - Also installs and updates languages on command
 - Provides APIs for:
-    - Getting a Tree-sitter `Tree` by its buffer id, getting trees for all tracked buffers
+    - Getting a Tree-sitter `Tree` by its buffer id
     - Subscribing to tree changes in any buffer in real time using `sublime_plugin.EventListener`
     - Getting a tree from a string of code
     - Querying a tree or node, walking a tree or node
     - Getting a node from a point or selection, getting a region from a node
+    - Selecting ancestor, descendant, or sibling nodes
 
 It's easy to build Tree-sitter plugins on top of this one, for "structural" editing, selection, navigation, code
 folding, symbol maps… See e.g. https://zed.dev/blog/syntax-aware-editing for ideas. It's performant and doesn't block
@@ -223,9 +224,22 @@ def instantiate_languages():
 
 
 def check_scope(scope: str | None):
-    if not scope or scope not in SCOPE_TO_LANGUAGE:
+    """
+    Ensure scope is a supported scope. If scope doesn't match supported scopes, try to return any supported scope that's
+    a prefix of scope.
+
+    This means the Tree-sitter parser for `source.yaml` can be used for any scope that starts with `source.yaml`, e.g.
+    `source.yaml.sublime.syntax`.
+    """
+    if not scope:
         return None
-    return scope
+    if scope in SCOPE_TO_LANGUAGE:
+        return scope
+
+    scopes = list(SCOPE_TO_LANGUAGE.keys())
+    for supported_scope in scopes:
+        if scope.startswith(supported_scope):
+            return supported_scope
 
 
 def get_edit(
@@ -737,6 +751,13 @@ class TreeSitterUpdateLanguageCommand(TreeSitterSelectLanguageMixin, sublime_plu
 #
 
 
+def get_tracked_buffer_ids():
+    """
+    Get buffer ids for all tracked buffers.
+    """
+    return list(BUFFER_ID_TO_TREE.keys())
+
+
 def get_tree_dict(buffer_id: int):
     """
     Get tree dict being maintained for this buffer, or instantiate new tree dict on the fly.
@@ -768,16 +789,16 @@ def get_view_from_buffer_id(buffer_id: int) -> sublime.View | None:
     return view if maybe_none(view.id()) is not None else None
 
 
-def get_tree_from_code(scope: ScopeType, s: str | bytes):
+def get_tree_from_code(scope: str, s: str | bytes):
     """
     Get a syntax tree back for source code `s`.
     """
     from tree_sitter import Parser
 
-    if scope not in SCOPE_TO_LANGUAGE:
+    if not (validated_scope := check_scope(scope)):
         return None
     parser = Parser()
-    parser.set_language(SCOPE_TO_LANGUAGE[scope])
+    parser.set_language(SCOPE_TO_LANGUAGE[validated_scope])
     return parser.parse(s.encode() if isinstance(s, str) else s)
 
 

@@ -76,11 +76,8 @@ ScopeType = Literal[
     "source.toml",
     "source.yaml",
     "source.json",
-    "source.json.sublime",
-    "source.json.sublime.keymap",
-    "source.json.sublime.commands",
-    "source.json.sublime.theme",
-    "source.shell.bash",
+    "source.json",
+    "source.shell",
     "source.Kotlin",
     "source.julia",
     "source.haskell",
@@ -90,6 +87,7 @@ ScopeType = Literal[
     "text.html.svelte",
     "text.html.basic",
     "text.html.markdown",
+    "text.xml",
 ]
 
 LANGUAGE_NAME_TO_SCOPES: Dict[str, List[ScopeType]] = {
@@ -120,17 +118,14 @@ LANGUAGE_NAME_TO_SCOPES: Dict[str, List[ScopeType]] = {
     "elixir": ["source.elixir"],
     "toml": ["source.toml"],
     "yaml": ["source.yaml"],
-    "json": [
-        "source.json",
-        "source.json.sublime",
-        "source.json.sublime.keymap",
-        "source.json.sublime.commands",
-        "source.json.sublime.theme",
-    ],
-    "bash": ["source.shell.bash"],
+    "json": ["source.json"],
+    "bash": ["source.shell"],
     "vue": ["text.html.vue"],
     "svelte": ["text.html.svelte"],
-    "html": ["text.html.basic"],
+    "html": [
+        "text.html.basic",
+        "text.xml",
+    ],
     "markdown": ["text.html.markdown"],
 }
 

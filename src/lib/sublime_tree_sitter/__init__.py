@@ -5,12 +5,11 @@ Example usage: `from sublime_tree_sitter import get_tree_dict`
 """
 from __future__ import annotations
 
-import copy
 from typing import TYPE_CHECKING, Tuple
 
 import sublime
-from TreeSitter.main import BUFFER_ID_TO_TREE, SCOPE_TO_LANGUAGE
-from TreeSitter.src.utils import ScopeType, byte_offset, maybe_none
+from TreeSitter.main import SCOPE_TO_LANGUAGE, get_tree_dict, get_view_from_buffer_id
+from TreeSitter.src.utils import ScopeType, byte_offset
 
 if TYPE_CHECKING:
     # So this module can be imported before `tree_sitter` installed
@@ -18,9 +17,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "get_view_from_buffer_id",
-    "get_tree_dicts",
     "get_tree_dict",
-    "has_tree",
     "get_tree_from_code",
     "query_tree",
     "walk_tree",
@@ -30,37 +27,6 @@ __all__ = [
     "get_ancestor",
     "get_size",
 ]
-
-
-def get_view_from_buffer_id(buffer_id: int) -> sublime.View | None:
-    """
-    Utilify function. Ensures `None` returned if a "dead" buffer id passed.
-    """
-    buffer = sublime.Buffer(buffer_id)
-    view = buffer.primary_view()
-    return view if maybe_none(view.id()) is not None else None
-
-
-def get_tree_dicts():
-    """
-    Get all tree dicts being maintained for buffers.
-    """
-    return {buffer_id: copy.copy(tree) for buffer_id, tree in BUFFER_ID_TO_TREE.items()}
-
-
-def get_tree_dict(buffer_id: int):
-    """
-    Get tree dict being maintained for this buffer.
-    """
-    tree = BUFFER_ID_TO_TREE.get(buffer_id)
-    return copy.copy(tree) if tree else None
-
-
-def has_tree(buffer_id: int):
-    """
-    Are we maintaining a tree for this buffer?
-    """
-    return buffer_id in BUFFER_ID_TO_TREE
 
 
 def get_tree_from_code(scope: ScopeType, s: str | bytes):
@@ -152,8 +118,7 @@ def get_node_spanning_region(region: sublime.Region | Tuple[int, int], buffer_id
     If there are two nodes matching a zero-width region, prefer the "deeper" of the two, i.e. the one furthest from the
     root of the tree.
     """
-    tree_dict = BUFFER_ID_TO_TREE.get(buffer_id)
-    if not tree_dict:
+    if not (tree_dict := get_tree_dict(buffer_id)):
         return None
 
     region = region if isinstance(region, sublime.Region) else sublime.Region(*region)

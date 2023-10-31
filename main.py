@@ -47,7 +47,7 @@ from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from shutil import rmtree
 from threading import Thread
-from typing import TYPE_CHECKING, TypedDict
+from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 import sublime
 import sublime_plugin
@@ -70,6 +70,7 @@ from .src.utils import (
     get_settings,
     get_settings_dict,
     log,
+    maybe_none,
 )
 
 if TYPE_CHECKING:
@@ -352,6 +353,37 @@ def get_scope(view: View) -> str | None:
     return syntax.scope
 
 
+def get_tree_dict(buffer_id: int):
+    """
+    Get tree dict being maintained for this buffer, or instantiate new tree dict on the fly.
+    """
+    if not isinstance(cast(Any, buffer_id), int) or not (view := get_view_from_buffer_id(buffer_id)):
+        return
+    if not (scope := get_scope(view)) or not (scope := check_scope(scope)):
+        BUFFER_ID_TO_TREE.pop(buffer_id, None)
+        return
+
+    tree_dict = BUFFER_ID_TO_TREE.get(buffer_id)
+    if not tree_dict or tree_dict["scope"] != scope:
+        from tree_sitter import Parser
+
+        view_text = get_view_text(view)
+        BUFFER_ID_TO_TREE[buffer_id] = make_tree_dict(parse(Parser(), scope, view_text), view_text, scope)
+        trim_cached_trees()
+        publish_tree_update(view.window(), buffer_id=buffer_id, scope=scope)
+
+    return BUFFER_ID_TO_TREE.get(buffer_id)
+
+
+def get_view_from_buffer_id(buffer_id: int) -> sublime.View | None:
+    """
+    Utilify function. Ensures `None` returned if a "dead" buffer id passed.
+    """
+    buffer = sublime.Buffer(buffer_id)
+    view = buffer.primary_view()
+    return view if maybe_none(view.id()) is not None else None
+
+
 def publish_tree_update(window: sublime.Window | None, buffer_id: int, scope: str):
     """
     See `TreeSitterUpdateTreeCommand`.
@@ -396,10 +428,10 @@ def parse_view(parser: Parser, view: View, view_text: str, publish_update: bool 
     tree = parse(parser, scope, s=view_text)
 
     BUFFER_ID_TO_TREE[buffer_id] = make_tree_dict(tree, view_text, scope)
+    trim_cached_trees()
 
     if publish_update:
         publish_tree_update(view.window(), buffer_id=buffer_id, scope=scope)
-    trim_cached_trees()
 
     return tree
 
@@ -466,8 +498,11 @@ class TreeSitterEventListener(sublime_plugin.EventListener):
     When a buffer is loaded, reverted, or reloaded, we do a full parse to get its tree, and cache that. This ensures the
     tree matches the buffer text even if this text is edited e.g. outside of ST.
 
-    It would be nice to reparse buffer `on_post_text_command` for "set_file_type" (syntax changes), but text commands
-    run from command the palette aren't caught by event listeners. [This is a serious bug in the plugin API](https://github.com/sublimehq/sublime_text/issues/2234).
+    It would be nice to (re)parse buffer `on_post_text_command` for "set_file_type" (syntax changes), but text commands
+    run from command the palette aren't caught by event listeners.
+
+    [This is a serious bug in the plugin API](https://github.com/sublimehq/sublime_text/issues/2234). Our workaround is
+    to ensure client code can only access trees through `get_tree_dict`, which handles syntax changes on read.
     """
 
     @property
@@ -595,8 +630,8 @@ class TreeSitterTextChangeListener(sublime_plugin.TextChangeListener):
                 )
 
             BUFFER_ID_TO_TREE[buffer_id] = make_tree_dict(tree, view_text, scope)
-            publish_tree_update(view.window(), buffer_id=buffer_id, scope=scope)
             trim_cached_trees()
+            publish_tree_update(view.window(), buffer_id=buffer_id, scope=scope)
 
         sublime.set_timeout_async(callback=cb, delay=debounce_ms + 1 if debounce_ms > 0 else 0)
 

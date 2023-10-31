@@ -20,6 +20,11 @@ def maybe_none(var: T) -> T | None:
     return var
 
 
+def not_none(var: T | None) -> T:
+    assert var is not None
+    return var
+
+
 def log(s: str, with_print=True, with_status=False):
     msg = f"Tree-sitter: {s}"
     if with_print:
@@ -36,24 +41,6 @@ def add_path(path: str):
     """
     if path not in sys.path:
         sys.path.insert(0, path)
-
-
-def byte_offset(point: int, s: str):
-    """
-    Convert a Sublime [Point](https://www.sublimetext.com/docs/api_reference.html#sublime.Point), the offset from the
-    beginning of the buffer in UTF-8 code points, to a byte offset. For UTF-8, byte is the same as "code unit".
-
-    Tree-sitter works with code unit offsets, not code point offsets. If source code is ASCII this makes no difference,
-    but testing shows that making edits with code points instead of code units corrupts trees for non-ASCII source.
-
-    ---
-
-    Note that Sublime (confusingly) calls code points offsets "character" offsets. Multiple code points can result in
-    just one user-perceived character, e.g. this one: שָׁ
-
-    More info here: http://utf8everywhere.org/, https://tonsky.me/blog/unicode/
-    """
-    return len(s[:point].encode())
 
 
 class SettingsDict(TypedDict):

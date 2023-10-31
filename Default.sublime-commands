@@ -19,4 +19,20 @@
     "caption": "TreeSitter: Update Language",
     "command": "tree_sitter_update_language"
   },
+  {
+    "caption": "TreeSitter: Select Ancestor",
+    "command": "tree_sitter_select_ancestor",
+  },
+  {
+    "caption": "TreeSitter: Select Sibling",
+    "command": "tree_sitter_select_sibling",
+  },
+  {
+    "caption": "TreeSitter: Select Descendant",
+    "command": "tree_sitter_select_descendant",
+  },
+  {
+    "caption": "TreeSitter: Print Tree",
+    "command": "tree_sitter_print_tree",
+  },
 ]

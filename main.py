@@ -238,7 +238,7 @@ def check_scope(scope: str | None):
 
     scopes = list(SCOPE_TO_LANGUAGE.keys())
     for supported_scope in scopes:
-        if scope.startswith(supported_scope):
+        if scope.startswith(f"{supported_scope}."):
             return supported_scope
 
 
@@ -1095,7 +1095,7 @@ class TreeSitterSelectSiblingCommand(sublime_plugin.TextCommand):
 class TreeSitterSelectDescendantCommand(sublime_plugin.TextCommand):
     """
     Find node that spans region, then find first descendant that's smaller than this node, and select region
-    corresponding to thsi node.
+    corresponding to this node.
     """
 
     def run(self, edit, reverse_sel: bool = True):
@@ -1147,6 +1147,7 @@ class TreeSitterPrintTreeCommand(sublime_plugin.TextCommand):
 
         name = get_view_name(self.view)
         view = window.new_file()
-        view.set_name(f"Syntax Tree - {name}" if name else "Syntax Tree")
+        language = get_scope_to_language_name()[tree_dict["scope"]]
+        view.set_name(f"Syntax Tree ({language}) - {name}" if name else f"Syntax Tree ({language})")
         view.set_scratch(True)
         view.insert(edit, 0, "\n".join(parts))

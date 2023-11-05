@@ -59,6 +59,7 @@ from .src.utils import (
     DEPS_PATH,
     LIB_PATH,
     PROJECT_ROOT,
+    QUERIES_PATH,
     SETTINGS_FILENAME,
     ScopeType,
     add_path,
@@ -802,19 +803,31 @@ def get_tree_from_code(scope: str, s: str | bytes):
     return parser.parse(s.encode() if isinstance(s, str) else s)
 
 
-def query_tree(scope: ScopeType, query_s: str, tree_or_node: Tree | Node):
+def query_node_with_s(scope: str | None, query_s: str, node: Node):
     """
-    Query a syntax tree or node with `query_s`.
+    Query a node with `query_s`.
 
     See https://github.com/tree-sitter/py-tree-sitter#pattern-matching
     """
-    from tree_sitter import Tree
-
-    if scope not in SCOPE_TO_LANGUAGE:
-        return None
+    if not (scope := check_scope(scope)):
+        return
     language = SCOPE_TO_LANGUAGE[scope]
     query = language.query(query_s)
-    return query.captures(tree_or_node.root_node if isinstance(tree_or_node, Tree) else tree_or_node)
+    return query.captures(node)
+
+
+def query_node(scope: str | None, query_file: str, node: Node):
+    """
+    Query a node with a prepared query.
+    """
+    if not (scope := check_scope(scope)):
+        return
+    language_name = get_scope_to_language_name()[scope]
+    path = QUERIES_PATH / language_name / query_file
+
+    with open(path, "r") as f:
+        query_s = f.read()
+    return query_node_with_s(scope, query_s, node)
 
 
 def walk_tree(tree_or_node: Tree | Node):
@@ -870,6 +883,13 @@ def get_ancestors(node: Node) -> list[Node]:
         nodes.append(current_node)
         current_node = current_node.parent
     return nodes
+
+
+def get_depth(node: Node) -> int:
+    """
+    Get 0-based depth of node relative to tree's `root_node`.
+    """
+    return len(get_ancestors(node)) - 1
 
 
 def get_node_spanning_region(region: sublime.Region | tuple[int, int], buffer_id: int) -> Node | None:
@@ -1043,8 +1063,32 @@ def get_sibling(region: sublime.Region, view: sublime.View, forward: bool = True
     return siblings[idx % len(siblings)]
 
 
+def get_selected_nodes(view: sublime.View) -> list[Node]:
+    """
+    Get nodes selected in `view`.
+    """
+    nodes: list[Node] = []
+    for region in view.sel():
+        if len(region) > 0:
+            node = get_node_spanning_region(region, view.buffer_id())
+            if node:
+                nodes.append(node)
+
+    return nodes
+
+
+def render_debug_view(edit: sublime.Edit, view: sublime.View, name: str, text: str):
+    if not (window := view.window()):
+        return
+
+    new_view = window.new_file()
+    new_view.set_name(name)
+    new_view.set_scratch(True)
+    new_view.insert(edit, 0, text)
+
+
 #
-# Select commands, and print tree command for debugging
+# Select commands, query commands, and print tree command for debugging
 #
 
 
@@ -1112,6 +1156,53 @@ class TreeSitterSelectDescendantCommand(sublime_plugin.TextCommand):
             scroll_to_region(new_region, self.view)
 
 
+class TreeSitterSelectQueryCommand(sublime_plugin.TextCommand):
+    """
+    Select regions corresponding to nodes matched by query.
+    """
+
+    def run(self, edit):
+        pass
+
+
+class TreeSitterGotoQueryCommand(sublime_plugin.TextCommand):
+    """
+    Render goto options in current buffer from tree sitter query.
+    """
+
+    def run(self, edit):
+        if not (tree_dict := get_tree_dict(self.view.buffer_id())):
+            return
+
+        nodes = get_selected_nodes(self.view) or [tree_dict["tree"].root_node]
+        for node in nodes:
+            print(query_node(tree_dict["scope"], "tags.scm", node))
+
+
+class TreeSitterPrintQueryCommand(sublime_plugin.TextCommand):
+    """
+    For debugging queries.
+    """
+
+    def format_node(self, node: Node):
+        return f"{node.type}  {node.start_point} → {node.end_point}"
+
+    def run(self, edit):
+        indent = " " * 2
+        if not (tree_dict := get_tree_dict(self.view.buffer_id())):
+            return
+
+        parts: list[str] = []
+        for root_node in get_selected_nodes(self.view) or [tree_dict["tree"].root_node]:
+            for node, _ in query_node(tree_dict["scope"], "tags.scm", root_node) or []:
+                parts.append(f"{indent * get_depth(node)}{self.format_node(node)}")
+            parts.append("")
+
+        name = get_view_name(self.view)
+        debug_view_name = f"Matches (tags.scm) - {name}" if name else "Matches (tags.scm)"
+        render_debug_view(edit, self.view, debug_view_name, "\n".join(parts))
+
+
 class TreeSitterPrintTreeCommand(sublime_plugin.TextCommand):
     """
     For debugging. If nothing selected, print syntax tree for buffer. Else, print segment(s) of tree for selection(s).
@@ -1122,32 +1213,15 @@ class TreeSitterPrintTreeCommand(sublime_plugin.TextCommand):
 
     def run(self, edit):
         indent = " " * 2
-        tree_dict = get_tree_dict(self.view.buffer_id())
-        if not tree_dict:
+        if not (tree_dict := get_tree_dict(self.view.buffer_id())):
             return
-
-        window = self.view.window()
-        if not window:
-            return
-
-        root_nodes: list[Node] = []
-        for region in self.view.sel():
-            if len(region) > 0:
-                root_node = get_node_spanning_region(region, self.view.buffer_id())
-                if root_node:
-                    root_nodes.append(root_node)
-
-        if not root_nodes:
-            root_nodes = [tree_dict["tree"].root_node]
 
         parts: list[str] = []
-        for root_node in root_nodes:
+        for root_node in get_selected_nodes(self.view) or [tree_dict["tree"].root_node]:
             parts.extend([f"{indent * depth}{self.format_node(node)}" for node, depth in walk_tree(root_node)])
             parts.append("")
 
         name = get_view_name(self.view)
-        view = window.new_file()
         language = get_scope_to_language_name()[tree_dict["scope"]]
-        view.set_name(f"Syntax Tree ({language}) - {name}" if name else f"Syntax Tree ({language})")
-        view.set_scratch(True)
-        view.insert(edit, 0, "\n".join(parts))
+        debug_view_name = f"Tree ({language}) - {name}" if name else f"Tree ({language})"
+        render_debug_view(edit, self.view, debug_view_name, "\n".join(parts))

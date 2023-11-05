@@ -14,7 +14,8 @@ from TreeSitter.main import (
     get_tree_dict,
     get_tree_from_code,
     get_view_from_buffer_id,
-    query_tree,
+    query_node,
+    query_node_with_s,
     walk_tree,
 )
 
@@ -29,6 +30,7 @@ __all__ = [
     "get_tree_dict",
     "get_tree_from_code",
     "get_view_from_buffer_id",
-    "query_tree",
+    "query_node",
+    "query_node_with_s",
     "walk_tree",
 ]

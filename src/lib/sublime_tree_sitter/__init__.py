@@ -3,7 +3,7 @@ Public-facing functions to interface with Tree-sitter, designed for use by other
 
 Example usage: `from sublime_tree_sitter import get_tree_dict`
 """
-from TreeSitter.main import (
+from TreeSitter.src.api import (
     get_ancestor,
     get_descendant,
     get_larger_ancestor,

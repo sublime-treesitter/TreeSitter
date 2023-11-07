@@ -2,6 +2,6 @@
 
 # Run from root of repo: `cd .git/hooks && ln -s -f ../../pre-push`
 
-ruff src main.py
-ruff format --check src main.py
-pyright src main.py
+ruff src load.py
+ruff format --check src load.py
+pyright src load.py

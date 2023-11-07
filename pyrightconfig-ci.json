@@ -13,6 +13,7 @@
   "reportUntypedClassDecorator": "none",
   "reportUntypedFunctionDecorator": "none",
   "reportUntypedNamedTuple": "none",
+  "reportUnusedImport": "none",
   "reportUnusedVariable": "none",
   "reportUnnecessaryTypeIgnoreComment": "error",
   "reportIncompatibleVariableOverride": "none",

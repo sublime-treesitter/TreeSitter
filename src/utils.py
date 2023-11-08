@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Dict, List, Literal, TypedDict, TypeVar, cast
+from typing import TYPE_CHECKING, Dict, List, Literal, TypedDict, TypeVar, cast
 
 import sublime
+
+if TYPE_CHECKING:
+    from typing_extensions import NotRequired
 
 PROJECT_ROOT = Path(__file__).parent.parent
 DEPS_PATH = PROJECT_ROOT / "deps"
@@ -49,7 +52,7 @@ class SettingsDict(TypedDict):
     python_path: str
     pip_path: str
     language_name_to_scopes: Dict[str, List[ScopeType]] | None
-    language_name_to_org_and_repo: Dict[str, str] | None
+    language_name_to_repo: Dict[str, RepoDict] | None
     language_name_to_parser_path: Dict[str, str] | None
     language_name_to_debounce_ms: Dict[str, float] | None
     debug: bool | None
@@ -84,12 +87,14 @@ ScopeType = Literal[
     "source.haskell",
     "source.clojure",
     "source.elixir",
+    "source.sql",
     "text.html.vue",
     "text.html.svelte",
     "text.html.basic",
     "text.html.markdown",
     "text.xml",
 ]
+
 
 LANGUAGE_NAME_TO_SCOPES: Dict[str, List[ScopeType]] = {
     "python": ["source.python"],
@@ -123,6 +128,7 @@ LANGUAGE_NAME_TO_SCOPES: Dict[str, List[ScopeType]] = {
     "bash": ["source.shell"],
     "vue": ["text.html.vue"],
     "svelte": ["text.html.svelte"],
+    "sql": ["source.sql"],
     "html": [
         "text.html.basic",
         "text.xml",
@@ -138,42 +144,55 @@ Notes on languages
     - https://github.com/MDeiml/tree-sitter-markdown/issues/114
 """
 
-LANGUAGE_NAME_TO_ORG_AND_REPO = {
-    "python": "tree-sitter/tree-sitter-python",
-    "typescript": "tree-sitter/tree-sitter-typescript",
-    "tsx": "tree-sitter/tree-sitter-typescript",
-    "javascript": "tree-sitter/tree-sitter-javascript",
-    "css": "tree-sitter/tree-sitter-css",
-    "scss": "serenadeai/tree-sitter-scss",
-    "go": "tree-sitter/tree-sitter-go",
-    "rust": "tree-sitter/tree-sitter-rust",
-    "lua": "MunifTanjim/tree-sitter-lua",
-    "ruby": "tree-sitter/tree-sitter-ruby",
-    "java": "tree-sitter/tree-sitter-java",
-    "php": "tree-sitter/tree-sitter-php",
-    "zig": "maxxnino/tree-sitter-zig",
-    "c": "tree-sitter/tree-sitter-c",
-    "cpp": "tree-sitter/tree-sitter-cpp",
-    "c_sharp": "tree-sitter/tree-sitter-c-sharp",
-    "scala": "tree-sitter/tree-sitter-scala",
-    "toml": "ikatyang/tree-sitter-toml",
-    "yaml": "ikatyang/tree-sitter-yaml",
-    "json": "tree-sitter/tree-sitter-json",
-    "bash": "tree-sitter/tree-sitter-bash",
-    "vue": "ikatyang/tree-sitter-vue",
-    "svelte": "Himujjal/tree-sitter-svelte",
-    "html": "tree-sitter/tree-sitter-html",
-    "markdown": "ikatyang/tree-sitter-markdown",
-    "kotlin": "fwcd/tree-sitter-kotlin",
-    "julia": "tree-sitter/tree-sitter-julia",
-    "haskell": "tree-sitter/tree-sitter-haskell",
-    "clojure": "sogaiu/tree-sitter-clojure",
-    "elixir": "elixir-lang/tree-sitter-elixir",
+
+class RepoDict(TypedDict):
+    """
+    `branch` can be branch, tag, commit hash, anything that can be passed to `git checkout <>`
+
+    This is e.g. for repos where `parser.c` isn't checked into main branch, or if user wants to peg to a git hash.
+    """
+
+    repo: str
+    branch: NotRequired[str]
+
+
+LANGUAGE_NAME_TO_REPO: dict[str, RepoDict] = {
+    "python": {"repo": "tree-sitter/tree-sitter-python"},
+    "typescript": {"repo": "tree-sitter/tree-sitter-typescript"},
+    "tsx": {"repo": "tree-sitter/tree-sitter-typescript"},
+    "javascript": {"repo": "tree-sitter/tree-sitter-javascript"},
+    "css": {"repo": "tree-sitter/tree-sitter-css"},
+    "scss": {"repo": "serenadeai/tree-sitter-scss"},
+    "go": {"repo": "tree-sitter/tree-sitter-go"},
+    "rust": {"repo": "tree-sitter/tree-sitter-rust"},
+    "lua": {"repo": "MunifTanjim/tree-sitter-lua"},
+    "ruby": {"repo": "tree-sitter/tree-sitter-ruby"},
+    "java": {"repo": "tree-sitter/tree-sitter-java"},
+    "php": {"repo": "tree-sitter/tree-sitter-php"},
+    "zig": {"repo": "maxxnino/tree-sitter-zig"},
+    "c": {"repo": "tree-sitter/tree-sitter-c"},
+    "cpp": {"repo": "tree-sitter/tree-sitter-cpp"},
+    "c_sharp": {"repo": "tree-sitter/tree-sitter-c-sharp"},
+    "scala": {"repo": "tree-sitter/tree-sitter-scala"},
+    "toml": {"repo": "ikatyang/tree-sitter-toml"},
+    "yaml": {"repo": "ikatyang/tree-sitter-yaml"},
+    "json": {"repo": "tree-sitter/tree-sitter-json"},
+    "bash": {"repo": "tree-sitter/tree-sitter-bash"},
+    "vue": {"repo": "ikatyang/tree-sitter-vue"},
+    "svelte": {"repo": "Himujjal/tree-sitter-svelte"},
+    "html": {"repo": "tree-sitter/tree-sitter-html"},
+    "markdown": {"repo": "ikatyang/tree-sitter-markdown"},
+    "kotlin": {"repo": "fwcd/tree-sitter-kotlin"},
+    "julia": {"repo": "tree-sitter/tree-sitter-julia"},
+    "haskell": {"repo": "tree-sitter/tree-sitter-haskell"},
+    "clojure": {"repo": "sogaiu/tree-sitter-clojure"},
+    "elixir": {"repo": "elixir-lang/tree-sitter-elixir"},
+    "sql": {"repo": "DerekStride/tree-sitter-sql", "branch": "gh-pages"},
 }
 
 LANGUAGE_NAME_TO_PARSER_PATH: dict[str, str] = {}
-for name, org_and_repo in LANGUAGE_NAME_TO_ORG_AND_REPO.items():
-    _, repo = org_and_repo.split("/")
+for name, org_and_repo in LANGUAGE_NAME_TO_REPO.items():
+    _, repo = org_and_repo["repo"].split("/")
     LANGUAGE_NAME_TO_PARSER_PATH[name] = repo
 
 # Overrides for special Tree-sitter grammar repos in which parser.c isn't at src/parser.c
@@ -213,9 +232,9 @@ def get_scope_to_language_name():
     return scope_to_language_name
 
 
-def get_language_name_to_org_and_repo():
-    settings_d = get_settings_dict().get("language_name_to_org_and_repo") or {}
-    return {**LANGUAGE_NAME_TO_ORG_AND_REPO, **settings_d}
+def get_language_name_to_repo():
+    settings_d = get_settings_dict().get("language_name_to_repo") or {}
+    return {**LANGUAGE_NAME_TO_REPO, **settings_d}
 
 
 def get_language_name_to_parser_path():

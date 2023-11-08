@@ -63,8 +63,8 @@ from .utils import (
     ScopeType,
     add_path,
     get_language_name_to_debounce_ms,
-    get_language_name_to_org_and_repo,
     get_language_name_to_parser_path,
+    get_language_name_to_repo,
     get_language_name_to_scopes,
     get_scope_to_language_name,
     get_settings,
@@ -147,9 +147,16 @@ def install_tree_sitter(pip_path: str):
         )
 
 
-def clone_language(org_and_repo: str):
+def clone_language(org_and_repo: str, branch: str = ""):
+    """
+    Clone repo, and if `branch` is specified, `cd` into repo and run `git checkout <branch>`.
+    """
     _, repo = org_and_repo.split("/")
-    subprocess.run(["git", "clone", f"https://github.com/{org_and_repo}", str(BUILD_PATH / repo)], check=True)
+    repo_path = str(BUILD_PATH / repo)
+    subprocess.run(["git", "clone", f"https://github.com/{org_and_repo}", repo_path], check=True)
+
+    if branch:
+        subprocess.run(["git", "checkout", branch], cwd=repo_path, check=True)
 
 
 def get_so_file(language_name: str):
@@ -162,21 +169,25 @@ def clone_languages():
     """
     language_names = get_settings_dict()["installed_languages"]
     files = set(f for f in os.listdir(BUILD_PATH))
-    language_name_to_org_and_repo = get_language_name_to_org_and_repo()
+    language_name_to_repo = get_language_name_to_repo()
 
     for name in set(language_names):
-        if name not in language_name_to_org_and_repo:
+        if name not in language_name_to_repo:
             log(f'"{name}" language is not supported, read more at {PROJECT_REPO}')
             continue
 
-        org_and_repo = language_name_to_org_and_repo[name]
+        repo_dict = language_name_to_repo[name]
+        org_and_repo = repo_dict["repo"]
         _, repo = org_and_repo.split("/")
         if repo in files:
             # We've already cloned this repo
             continue
 
-        log(f"installing {org_and_repo} repo for {name} language", with_status=True)
-        clone_language(org_and_repo)
+        log_s = f"installing {org_and_repo} repo for {name} language"
+        if branch := repo_dict.get("branch", ""):
+            log_s = f"{log_s}, and checking out {branch}"
+        log(log_s, with_status=True)
+        clone_language(org_and_repo, branch=repo_dict.get("branch", ""))
         files.add(repo)  # Avoid cloning a repo used for multiple languages multiple times
 
 
@@ -650,9 +661,9 @@ def remove_language(language: str):
     - Remove language repo and .so file from disk
     - Remove `Language` instance from `SCOPE_TO_LANGUAGE`
     """
-    org_and_repo = get_language_name_to_org_and_repo().get(language)
-    if org_and_repo:
-        _, repo = org_and_repo.split("/")
+    repo_dict = get_language_name_to_repo().get(language)
+    if repo_dict:
+        _, repo = repo_dict["repo"].split("/")
         try:
             rmtree(BUILD_PATH / repo)
         except Exception as e:

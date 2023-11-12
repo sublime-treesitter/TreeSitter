@@ -1,7 +1,5 @@
-(module (expression_statement (assignment left: (identifier) @name) @definition.constant))
+(module (expression_statement (assignment left: (identifier) @definition.var)))
 
-(class_definition
-  name: (identifier) @name) @definition.class
+(class_definition name: (identifier) @definition.class)
 
-(function_definition
-  name: (identifier) @name) @definition.function
+(function_definition name: (identifier) @definition.function)

@@ -88,6 +88,7 @@ ScopeType = Literal[
     "source.clojure",
     "source.elixir",
     "source.sql",
+    "source.scheme",
     "text.html.vue",
     "text.html.svelte",
     "text.html.basic",
@@ -126,6 +127,7 @@ LANGUAGE_NAME_TO_SCOPES: Dict[str, List[ScopeType]] = {
     "yaml": ["source.yaml"],
     "json": ["source.json"],
     "bash": ["source.shell"],
+    "query": ["source.scheme"],
     "vue": ["text.html.vue"],
     "svelte": ["text.html.svelte"],
     "sql": ["source.sql"],
@@ -187,6 +189,7 @@ LANGUAGE_NAME_TO_REPO: dict[str, RepoDict] = {
     "haskell": {"repo": "tree-sitter/tree-sitter-haskell"},
     "clojure": {"repo": "sogaiu/tree-sitter-clojure"},
     "elixir": {"repo": "elixir-lang/tree-sitter-elixir"},
+    "query": {"repo": "nvim-treesitter/tree-sitter-query"},
     "sql": {"repo": "DerekStride/tree-sitter-sql", "branch": "gh-pages"},
 }
 

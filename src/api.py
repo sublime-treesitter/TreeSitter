@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 import sublime
@@ -22,6 +23,8 @@ from .utils import QUERIES_PATH, get_scope_to_language_name, maybe_none, not_non
 
 if TYPE_CHECKING:
     from tree_sitter import Node, Tree
+
+SYMBOLS_FILE = "symbols.scm"
 
 #
 # Public-facing API functions, and some helper functions
@@ -92,14 +95,16 @@ def query_node_with_s(scope: str | None, query_s: str, node: Node):
     return query.captures(node)
 
 
-def query_node(scope: str | None, query_file: str, node: Node):
+def query_node(scope: str | None, query_file: str, node: Node, queries_path: str | Path = ""):
     """
     Query a node with a prepared query.
     """
     if not (scope := check_scope(scope)):
         return
     language_name = get_scope_to_language_name()[scope]
-    path = QUERIES_PATH / language_name / query_file
+
+    queries_path = os.path.expanduser(queries_path or QUERIES_PATH)
+    path = Path(queries_path) / language_name / query_file
 
     with open(path, "r") as f:
         query_s = f.read()
@@ -434,7 +439,7 @@ class TreeSitterGotoQueryCommand(sublime_plugin.TextCommand):
 
         nodes = get_selected_nodes(self.view) or [tree_dict["tree"].root_node]
         for node in nodes:
-            print(query_node(tree_dict["scope"], "symbols.scm", node))
+            print(query_node(tree_dict["scope"], SYMBOLS_FILE, node))
 
 
 class TreeSitterPrintQueryCommand(sublime_plugin.TextCommand):
@@ -452,12 +457,13 @@ class TreeSitterPrintQueryCommand(sublime_plugin.TextCommand):
 
         parts: list[str] = []
         for root_node in get_selected_nodes(self.view) or [tree_dict["tree"].root_node]:
-            for node, _ in query_node(tree_dict["scope"], "symbols.scm", root_node) or []:
+            for node, _ in query_node(tree_dict["scope"], SYMBOLS_FILE, root_node) or []:
                 parts.append(f"{indent * get_depth(node)}{self.format_node(node)}")
             parts.append("")
 
         name = get_view_name(self.view)
-        debug_view_name = f"Matches (symbols.scm) - {name}" if name else "Matches (symbols.scm)"
+        # TODO: support `Query.matches` API once it's added: https://github.com/tree-sitter/py-tree-sitter/pull/159
+        debug_view_name = f"Captures (symbols.scm) - {name}" if name else "Captures (symbols.scm)"
         render_debug_view(edit, self.view, debug_view_name, "\n".join(parts))
 
 

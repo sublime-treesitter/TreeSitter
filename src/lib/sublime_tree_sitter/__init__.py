@@ -9,6 +9,7 @@ from TreeSitter.src.api import (
     get_larger_ancestor,
     get_node_spanning_region,
     get_region_from_node,
+    get_selected_nodes,
     get_sibling,
     get_tracked_buffer_ids,
     get_tree_dict,
@@ -16,6 +17,7 @@ from TreeSitter.src.api import (
     get_view_from_buffer_id,
     query_node,
     query_node_with_s,
+    scroll_to_region,
     walk_tree,
 )
 
@@ -25,6 +27,7 @@ __all__ = [
     "get_larger_ancestor",
     "get_node_spanning_region",
     "get_region_from_node",
+    "get_selected_nodes",
     "get_sibling",
     "get_tracked_buffer_ids",
     "get_tree_dict",
@@ -32,5 +35,6 @@ __all__ = [
     "get_view_from_buffer_id",
     "query_node",
     "query_node_with_s",
+    "scroll_to_region",
     "walk_tree",
 ]

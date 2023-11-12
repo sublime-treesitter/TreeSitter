@@ -35,11 +35,12 @@
                   "yaml",
                   "json",
                   "bash",
+                  "query",
                   "vue",
                   "svelte",
                   "html",
                   "markdown",
-                  "sql"
+                  "sql",
                 ]
               },
               "markdownDescription": "Run `TreeSitter: Install Language` to see supported languages"

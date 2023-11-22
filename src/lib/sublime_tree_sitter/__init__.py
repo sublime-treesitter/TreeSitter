@@ -5,6 +5,7 @@ Example usage: `from sublime_tree_sitter import get_tree_dict`
 """
 from TreeSitter.src.api import (
     get_ancestor,
+    get_cousins,
     get_descendant,
     get_larger_ancestor,
     get_node_spanning_region,
@@ -23,6 +24,7 @@ from TreeSitter.src.api import (
 
 __all__ = [
     "get_ancestor",
+    "get_cousins",
     "get_descendant",
     "get_larger_ancestor",
     "get_node_spanning_region",

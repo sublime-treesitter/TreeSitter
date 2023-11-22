@@ -28,6 +28,10 @@
     "command": "tree_sitter_select_sibling",
   },
   {
+    "caption": "TreeSitter: Select Cousins",
+    "command": "tree_sitter_select_cousins",
+  },
+  {
     "caption": "TreeSitter: Select Descendant",
     "command": "tree_sitter_select_descendant",
   },

@@ -12,13 +12,7 @@ TreeSitter does the following:
     - Importable by other plugins with `import tree_sitter`
 - Installs and builds Tree-sitter languages, e.g. https://github.com/tree-sitter/tree-sitter-python, based on settings
     - Also installs and updates languages on command
-- Provides APIs for:
-    - Getting a Tree-sitter `Tree` by its buffer id
-    - Subscribing to tree changes in any buffer in real time using `sublime_plugin.EventListener`
-    - Getting a tree from a string of code
-    - Querying a tree or node, walking a tree or node
-    - Getting a node from a point or selection, getting a region from a node
-    - Selecting ancestor, descendant, or sibling nodes
+- Provides APIs for a bunch of stuff (see more in README)
 
 It's easy to build Tree-sitter plugins on top of this one, for "structural" editing, selection, navigation, code
 folding, symbol maps… See e.g. https://zed.dev/blog/syntax-aware-editing for ideas. It's performant and doesn't block
@@ -75,7 +69,7 @@ from .utils import (
 if TYPE_CHECKING:
     from tree_sitter import Language, Parser, Tree
 
-TREE_SITTER_BINDINGS_VERSION = "0.20.2"
+TREE_SITTER_BINDINGS_VERSION = "0.20.4"
 PROJECT_REPO = "https://github.com/sublime-treesitter/TreeSitter"
 
 MAX_CACHED_TREES = 16
@@ -140,6 +134,14 @@ def install_tree_sitter(pip_path: str):
 
     if v != TREE_SITTER_BINDINGS_VERSION:
         # Bindings either not installed, or correct version not installed
+        for f in os.listdir(DEPS_PATH):
+            # Remove old version before installing new version
+            if f.startswith("tree_sitter"):
+                try:
+                    rmtree(DEPS_PATH / f)
+                except Exception as e:
+                    log(f"error removing {f} from {DEPS_PATH}: {e}")
+
         log(f"installing tree_sitter=={TREE_SITTER_BINDINGS_VERSION}")
         subprocess.run(
             [pip_path, "install", "--target", str(DEPS_PATH), f"tree_sitter=={TREE_SITTER_BINDINGS_VERSION}"],

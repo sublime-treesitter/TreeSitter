@@ -13,12 +13,14 @@ Sublime `TreeSitter` does the following:
 - Installs [Tree-sitter Python bindings](https://github.com/tree-sitter/py-tree-sitter)
     - Importable by other plugins with `import tree_sitter`
 - Installs and builds Tree-sitter languages, e.g. https://github.com/tree-sitter/tree-sitter-python
-- Provides APIs for:
-    - Getting a Tree-sitter `Tree` by its buffer id, getting trees for all tracked buffers
-    - Subscribing to tree changes in any buffer in real time using `sublime_plugin.EventListener`
-    - Getting a tree from a string of code
-    - Querying a tree, walking a tree
-    - Getting a node from a point or selection, getting a region from a node
+- Provides APIs to:
+    - Get a Tree-sitter `Tree` by its buffer id, getting trees for all tracked buffers
+    - Subscribe to tree changes in any buffer in real time using `sublime_plugin.EventListener`
+    - Get a tree from a string of code
+    - Get a node from a point or selection, get a region from a node
+    - Select ancestor, descendant, sibling, or "cousin" nodes
+    - Query a tree, walk a tree
+    - Navigate to nodes returned by tree queries
 
 ## Installation
 
@@ -46,7 +48,7 @@ class MyTreeSitterListener(sublime_plugin.EventListener):
 
 ### Public APIs
 
-[See here](./src/lib/sublime_tree_sitter/__init__.py).
+[See here](./src/lib/sublime_tree_sitter/__init__.py) and [here](./src/api.py).
 
 ### Plugin load order
 

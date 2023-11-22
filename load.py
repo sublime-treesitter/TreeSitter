@@ -3,6 +3,7 @@ from .src.api import (  # noqa: F401
     TreeSitterPrintQueryCommand,
     TreeSitterPrintTreeCommand,
     TreeSitterSelectAncestorCommand,
+    TreeSitterSelectCousinsCommand,
     TreeSitterSelectDescendantCommand,
     TreeSitterSelectQueryCommand,
     TreeSitterSelectSiblingCommand,

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import sublime
 import sublime_plugin
@@ -111,7 +111,7 @@ def query_node(scope: str | None, query_file: str, node: Node, queries_path: str
     return query_node_with_s(scope, query_s, node)
 
 
-def walk_tree(tree_or_node: Tree | Node):
+def walk_tree(tree_or_node: Tree | Node, max_depth: int | None = None):
     """
     Walk all the nodes under `tree_or_node`.
 
@@ -124,9 +124,11 @@ def walk_tree(tree_or_node: Tree | Node):
     while not reached_root:
         yield cursor.node, depth
 
-        if cursor.goto_first_child():
-            depth += 1
-            continue
+        if max_depth is None or depth < max_depth:
+            # Don't walk children if we've already reached `max_depth`
+            if cursor.goto_first_child():
+                depth += 1
+                continue
 
         if cursor.goto_next_sibling():
             continue
@@ -150,7 +152,7 @@ def descendant_for_byte_range(node: Node, start_byte: int, end_byte: int) -> Nod
 
     See also: https://tree-sitter.github.io/tree-sitter/using-parsers#named-vs-anonymous-nodes
     """
-    return node.descendant_for_byte_range(start_byte, end_byte)  # type: ignore
+    return node.descendant_for_byte_range(start_byte, end_byte)
 
 
 def get_ancestors(node: Node) -> list[Node]:
@@ -287,7 +289,7 @@ def get_descendant(region: sublime.Region, view: sublime.View) -> Node | None:
 
 def get_sibling(region: sublime.Region, view: sublime.View, forward: bool = True) -> Node | None:
     """
-    - Find that node spans region
+    - Find node that spans region
     - Find "first" ancestor of this node, including node itself, that has siblings
         - If node spanning region is root node, find "first" descendant that has siblings
     - Return the next or previous sibling
@@ -324,6 +326,44 @@ def get_sibling(region: sublime.Region, view: sublime.View, forward: bool = True
     idx = siblings.index(node)
     idx = idx + 1 if forward else idx - 1
     return siblings[idx % len(siblings)]
+
+
+WhichCousinsType = Literal["next", "previous", "all"]
+
+
+def get_cousins(region: sublime.Region, view: sublime.View, which: WhichCousinsType = "all") -> list[Node]:
+    """
+    - Find node that spans region
+    - Return next node or previous node, or all nodes, at same depth in tree, and with same `type`
+    """
+    node = get_node_spanning_region(region, view.buffer_id())
+    if not node or not node.parent:
+        return []
+
+    ancestors = get_ancestors(node)
+    ancestor_types = [ancestor.type for ancestor in ancestors]
+    node_depth = len(ancestors) - 1
+    root_node = ancestors[-1]
+
+    cousins: list[Node] = []
+    for cousin, depth in walk_tree(root_node, max_depth=node_depth):
+        if depth == node_depth and cousin.type == node.type:
+            if [ancestor.type for ancestor in get_ancestors(cousin)] == ancestor_types:
+                cousins.append(cousin)
+
+    if which == "all":
+        return cousins
+
+    if which == "next":
+        for cousin in cousins:
+            if cousin.start_byte > node.start_byte:
+                return [cousin]
+        return [cousins[0]]
+
+    for cousin in reversed(cousins):
+        if cousin.start_byte < node.start_byte:
+            return [cousin]
+    return [cousins[-1]]
 
 
 def get_selected_nodes(view: sublime.View) -> list[Node]:
@@ -397,6 +437,28 @@ class TreeSitterSelectSiblingCommand(sublime_plugin.TextCommand):
 
         if new_regions:
             scroll_to_region(new_regions[-1] if forward else new_regions[0], self.view)
+
+
+class TreeSitterSelectCousinsCommand(sublime_plugin.TextCommand):
+    """
+    Find node spanning selected region, then find its next or previous cousin, or all cousins (depending on value of
+    `which`), and select these regions or extend current selection (depending on value of `extend`).
+    """
+
+    def run(self, edit, which: WhichCousinsType = "all", extend: bool = False, reverse_sel: bool = True):
+        sel = self.view.sel()
+        new_regions: list[sublime.Region] = []
+
+        for region in sel:
+            for cousin in get_cousins(region, self.view, which):
+                new_region = get_region_from_node(cousin, self.view, reverse=reverse_sel)
+                new_regions.append(new_region)
+                if which != "all" and not extend:
+                    sel.subtract(region)
+                sel.add(new_region)
+
+        if new_regions and which != "all":
+            scroll_to_region(new_regions[-1] if which == "next" else new_regions[0], self.view)
 
 
 class TreeSitterSelectDescendantCommand(sublime_plugin.TextCommand):

@@ -17,5 +17,6 @@
   "reportUnusedVariable": "none",
   "reportUnnecessaryTypeIgnoreComment": "error",
   "reportIncompatibleVariableOverride": "none",
-  "reportIncompatibleMethodOverride": "none"
+  "reportIncompatibleMethodOverride": "none",
+  "reportImportCycles": "error"
 }

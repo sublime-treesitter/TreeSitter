@@ -331,10 +331,19 @@ def get_sibling(region: sublime.Region, view: sublime.View, forward: bool = True
 WhichCousinsType = Literal["next", "previous", "all"]
 
 
-def get_cousins(region: sublime.Region, view: sublime.View, which: WhichCousinsType = "all") -> list[Node]:
+def get_cousins(
+    region: sublime.Region,
+    view: sublime.View,
+    same_types: bool = True,
+    same_text: bool = False,
+    which: WhichCousinsType = "all",
+) -> list[Node]:
     """
-    - Find node that spans region
-    - Return next node or previous node, or all nodes, at same depth in tree, and with same `type`
+    Find node that spans region, and return next/previous/all nodes that:
+
+    - Are at same depth in tree
+    - If `same_types` is `True`, have same `type`, and have ancestors of the same `type`s
+    - If `same_text` is `True`, have same `text`
     """
     node = get_node_spanning_region(region, view.buffer_id())
     if not node or not node.parent:
@@ -343,13 +352,16 @@ def get_cousins(region: sublime.Region, view: sublime.View, which: WhichCousinsT
     ancestors = get_ancestors(node)
     ancestor_types = [ancestor.type for ancestor in ancestors]
     node_depth = len(ancestors) - 1
-    root_node = ancestors[-1]
 
     cousins: list[Node] = []
-    for cousin, depth in walk_tree(root_node, max_depth=node_depth):
-        if depth == node_depth and cousin.type == node.type:
-            if [ancestor.type for ancestor in get_ancestors(cousin)] == ancestor_types:
-                cousins.append(cousin)
+    for cousin, depth in walk_tree(ancestors[-1], max_depth=node_depth):
+        if depth != node_depth:
+            continue
+        if same_text and cousin.text != node.text:
+            continue
+        if same_types and [ancestor.type for ancestor in get_ancestors(cousin)] != ancestor_types:
+            continue
+        cousins.append(cousin)
 
     if which == "all":
         return cousins
@@ -445,12 +457,20 @@ class TreeSitterSelectCousinsCommand(sublime_plugin.TextCommand):
     `which`), and select these regions or extend current selection (depending on value of `extend`).
     """
 
-    def run(self, edit, which: WhichCousinsType = "all", extend: bool = False, reverse_sel: bool = True):
+    def run(
+        self,
+        edit,
+        same_types: bool = True,
+        same_text: bool = False,
+        which: WhichCousinsType = "all",
+        extend: bool = False,
+        reverse_sel: bool = True,
+    ):
         sel = self.view.sel()
         new_regions: list[sublime.Region] = []
 
         for region in sel:
-            for cousin in get_cousins(region, self.view, which):
+            for cousin in get_cousins(region, self.view, same_types=same_types, same_text=same_text, which=which):
                 new_region = get_region_from_node(cousin, self.view, reverse=reverse_sel)
                 new_regions.append(new_region)
                 if which != "all" and not extend:

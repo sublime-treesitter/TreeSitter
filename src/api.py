@@ -392,14 +392,20 @@ def get_selected_nodes(view: sublime.View) -> list[Node]:
     return nodes
 
 
-def render_debug_view(edit: sublime.Edit, view: sublime.View, name: str, text: str):
+def render_debug_view(view: sublime.View, name: str, text: str):
+    """
+    Note that as of Sublime build 4166, we can't use `View.insert`, because the `edit` token for the "previous" view
+    isn't valid for the newly created view.
+
+    [See more here](https://github.com/sublimehq/sublime_text/issues/6177#issuecomment-1781019459).
+    """
     if not (window := view.window()):
         return
 
     new_view = window.new_file()
     new_view.set_name(name)
     new_view.set_scratch(True)
-    new_view.insert(edit, 0, text)
+    new_view.run_command("append", {"characters": text})
 
 
 #
@@ -546,7 +552,7 @@ class TreeSitterPrintQueryCommand(sublime_plugin.TextCommand):
         name = get_view_name(self.view)
         # TODO: support `Query.matches` API once it's added: https://github.com/tree-sitter/py-tree-sitter/pull/159
         debug_view_name = f"Captures (symbols.scm) - {name}" if name else "Captures (symbols.scm)"
-        render_debug_view(edit, self.view, debug_view_name, "\n".join(parts))
+        render_debug_view(self.view, debug_view_name, "\n".join(parts))
 
 
 class TreeSitterPrintTreeCommand(sublime_plugin.TextCommand):
@@ -570,4 +576,4 @@ class TreeSitterPrintTreeCommand(sublime_plugin.TextCommand):
         name = get_view_name(self.view)
         language = get_scope_to_language_name()[tree_dict["scope"]]
         debug_view_name = f"Tree ({language}) - {name}" if name else f"Tree ({language})"
-        render_debug_view(edit, self.view, debug_view_name, "\n".join(parts))
+        render_debug_view(self.view, debug_view_name, "\n".join(parts))

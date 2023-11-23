@@ -408,6 +408,46 @@ def render_debug_view(view: sublime.View, name: str, text: str):
     new_view.run_command("append", {"characters": text})
 
 
+def render_node_html(pairs: tuple[tuple[str, str], ...]):
+    """
+    For use in `show_node_under_selection`.
+    """
+    sp = "&nbsp;"
+    max_key_len = max(len(k) for (k, _) in pairs)
+
+    html = "<br/>".join(f"<b>{k}{sp * (max_key_len - len(k))}</b>{sp}:{sp}{sp}{v}" for (k, v) in pairs)
+    return f"<p>{html}</p>"
+
+
+def show_node_under_selection(view: sublime.View, select: bool, **kwargs):
+    """
+    Render a popup with info about the node under the first cursor/selection.
+
+    Inspired by https://github.com/nvim-treesitter/playground.
+    """
+    if not (sel := view.sel()):
+        return
+
+    if not (node := get_node_spanning_region(sel[0], view.buffer_id())) or not node.parent:
+        return
+
+    if select:
+        sel.add(get_region_from_node(node, view, reverse=True))
+
+    tree_dict = not_none(get_tree_dict(view.buffer_id()))
+
+    view.show_popup(
+        render_node_html(
+            (
+                ("type", node.type),
+                ("range", f"{node.start_point} → {node.end_point}"),
+                ("lang", get_scope_to_language_name()[tree_dict["scope"]]),
+            )
+        ),
+        **kwargs,
+    )
+
+
 #
 # Select, query and debug commands
 #
@@ -522,6 +562,7 @@ class TreeSitterGotoQueryCommand(sublime_plugin.TextCommand):
     """
 
     def run(self, edit):
+        # TODO: finish this
         if not (tree_dict := get_tree_dict(self.view.buffer_id())):
             return
 
@@ -577,3 +618,39 @@ class TreeSitterPrintTreeCommand(sublime_plugin.TextCommand):
         language = get_scope_to_language_name()[tree_dict["scope"]]
         debug_view_name = f"Tree ({language}) - {name}" if name else f"Tree ({language})"
         render_debug_view(self.view, debug_view_name, "\n".join(parts))
+
+
+class TreeSitterShowNodeUnderSelectionCommand(sublime_plugin.TextCommand):
+    """
+    For debugging. Render a popup with info about the node under the first cursor/selection.
+    """
+
+    def run(self, edit):
+        show_node_under_selection(self.view, select=True)
+
+
+SHOW_NODE_SETTINGS_NAME = "tree_sitter.show_node_under_selection"
+
+
+class TreeSitterToggleShowNodeUnderSelectionCommand(sublime_plugin.TextCommand):
+    """
+    For debugging, toggle a setting to render a popup with info about the node under the first cursor/selection,
+    whenever the selection changes.
+    """
+
+    SETTINGS_NAME = "tree_sitter.show_node_under_selection"
+
+    def run(self, edit):
+        settings = self.view.settings()
+
+        settings.set(SHOW_NODE_SETTINGS_NAME, not bool(settings.get(SHOW_NODE_SETTINGS_NAME, False)))
+
+
+class TreeSitterOnSelectionModifiedListener(sublime_plugin.EventListener):
+    """
+    For debugging, accompanies `TreeSitterToggleShowNodeUnderSelectionCommand`.
+    """
+
+    def on_selection_modified_async(self, view: sublime.View):
+        if view.settings().get(SHOW_NODE_SETTINGS_NAME, False):
+            show_node_under_selection(view, select=False)

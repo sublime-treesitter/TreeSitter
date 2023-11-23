@@ -51,4 +51,12 @@
     "caption": "TreeSitter: Print Tree",
     "command": "tree_sitter_print_tree",
   },
+  {
+    "caption": "TreeSitter: Show Node Under Selection",
+    "command": "tree_sitter_show_node_under_selection",
+  },
+  {
+    "caption": "TreeSitter: Toggle Show Node Under Selection",
+    "command": "tree_sitter_toggle_show_node_under_selection",
+  },
 ]

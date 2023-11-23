@@ -1,5 +1,6 @@
 from .src.api import (  # noqa: F401
     TreeSitterGotoQueryCommand,
+    TreeSitterOnSelectionModifiedListener,
     TreeSitterPrintQueryCommand,
     TreeSitterPrintTreeCommand,
     TreeSitterSelectAncestorCommand,
@@ -7,6 +8,8 @@ from .src.api import (  # noqa: F401
     TreeSitterSelectDescendantCommand,
     TreeSitterSelectQueryCommand,
     TreeSitterSelectSiblingCommand,
+    TreeSitterShowNodeUnderSelectionCommand,
+    TreeSitterToggleShowNodeUnderSelectionCommand,
 )
 from .src.core import (  # noqa: F401
     TreeSitterEventListener,

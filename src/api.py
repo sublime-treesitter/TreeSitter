@@ -415,8 +415,8 @@ def render_node_html(pairs: tuple[tuple[str, str], ...]):
     sp = "&nbsp;"
     max_key_len = max(len(k) for (k, _) in pairs)
 
-    html = "<br/>".join(f"<b>{k}{sp * (max_key_len - len(k))}</b>{sp}:{sp}{sp}{v}" for (k, v) in pairs)
-    return f"<p>{html}</p>"
+    html = "<br/>".join(f"<b>{k}{sp * (max_key_len - len(k))}</b>{sp}{sp}{v}" for (k, v) in pairs)
+    return f"<p>{html}<br/><a href=''>copy</a></p>"
 
 
 def show_node_under_selection(view: sublime.View, select: bool, **kwargs):
@@ -436,14 +436,20 @@ def show_node_under_selection(view: sublime.View, select: bool, **kwargs):
 
     tree_dict = not_none(get_tree_dict(view.buffer_id()))
 
+    pairs = (
+        ("type", node.type),
+        ("range", f"{node.start_point} → {node.end_point}"),
+        ("lang", get_scope_to_language_name()[tree_dict["scope"]]),
+        ("scope", tree_dict["scope"]),
+    )
+
+    def on_navigate(href: str):
+        sublime.set_clipboard("\n".join(pair[1] for pair in pairs))
+        sublime.status_message("node info copied")
+
     view.show_popup(
-        render_node_html(
-            (
-                ("type", node.type),
-                ("range", f"{node.start_point} → {node.end_point}"),
-                ("lang", get_scope_to_language_name()[tree_dict["scope"]]),
-            )
-        ),
+        render_node_html(pairs),
+        on_navigate=on_navigate,
         **kwargs,
     )
 

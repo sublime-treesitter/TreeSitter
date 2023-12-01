@@ -415,8 +415,10 @@ def render_node_html(pairs: tuple[tuple[str, str], ...]):
     sp = "&nbsp;"
     max_key_len = max(len(k) for (k, _) in pairs)
 
-    html = "<br/>".join(f"<b>{k}{sp * (max_key_len - len(k))}</b>{sp}{sp}{v}" for (k, v) in pairs)
-    return f"<p>{html}<br/><a href=''>copy</a></p>"
+    info_list = "<br/>".join(f"<b>{k}{sp * (max_key_len - len(k))}</b>{sp}{sp}{v}" for (k, v) in pairs)
+    copy_button = '<a href="">copy</a>'
+
+    return f'<body id="tree-sitter-node-info">{info_list}<br/><br/>{copy_button}</body>'
 
 
 def show_node_under_selection(view: sublime.View, select: bool, **kwargs):
@@ -439,6 +441,7 @@ def show_node_under_selection(view: sublime.View, select: bool, **kwargs):
     pairs = (
         ("type", node.type),
         ("range", f"{node.start_point} → {node.end_point}"),
+        ("depth", str(get_depth(node))),
         ("lang", get_scope_to_language_name()[tree_dict["scope"]]),
         ("scope", tree_dict["scope"]),
     )

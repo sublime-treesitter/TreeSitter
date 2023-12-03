@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Iterable, Literal, cast
 
 import sublime
 import sublime_plugin
@@ -412,7 +412,7 @@ def render_debug_view(view: sublime.View, name: str, text: str):
     new_view.run_command("append", {"characters": text})
 
 
-def render_node_html(pairs: tuple[tuple[str, str], ...]):
+def render_node_html(pairs: Iterable[tuple[str, str]]):
     """
     For use in `show_node_under_selection`.
     """
@@ -427,7 +427,8 @@ def render_node_html(pairs: tuple[tuple[str, str], ...]):
 
 def show_node_under_selection(view: sublime.View, select: bool, **kwargs):
     """
-    Render a popup with info about the node under the first cursor/selection.
+    Render a popup with info about the node under the first cursor/selection. If there are multiple nodes with the same
+    size spanning this selection, show info for them all.
 
     Inspired by https://github.com/nvim-treesitter/playground.
     """
@@ -442,13 +443,22 @@ def show_node_under_selection(view: sublime.View, select: bool, **kwargs):
 
     tree_dict = not_none(get_tree_dict(view.buffer_id()))
 
-    pairs = (
-        ("type", node.type),
+    nodes = [node]
+    while node.parent and get_size(node) == get_size(node.parent):
+        node = node.parent
+        nodes.append(node)
+
+    pairs: list[tuple[str, str]] = [
+        ("type", nodes[0].type),
+        ("depth", str(get_depth(nodes[0]))),
         ("range", f"{node.start_point} → {node.end_point}"),
-        ("depth", str(get_depth(node))),
         ("lang", get_scope_to_language_name()[tree_dict["scope"]]),
         ("scope", tree_dict["scope"]),
-    )
+    ]
+    for node in nodes[1:]:
+        pairs.insert(0, ("", "➔"))
+        pairs.insert(0, ("depth", str(get_depth(node))))
+        pairs.insert(0, ("type", node.type))
 
     def on_navigate(href: str):
         sublime.set_clipboard("\n".join(pair[1] for pair in pairs))
@@ -590,6 +600,9 @@ class TreeSitterPrintTreeCommand(sublime_plugin.TextCommand):
 
         parts: list[str] = []
         for root_node in get_selected_nodes(self.view) or [tree_dict["tree"].root_node]:
+            while root_node.parent and get_size(root_node) == get_size(root_node.parent):
+                # Move to "shallowest" ancestor with the same size as node spanning region
+                root_node = root_node.parent
             parts.extend([f"{indent * depth}{self.format_node(node)}" for node, depth in walk_tree(root_node)])
             parts.append("")
 

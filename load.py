@@ -1,12 +1,10 @@
 from .src.api import (  # noqa: F401
     TreeSitterGotoQueryCommand,
     TreeSitterOnSelectionModifiedListener,
-    TreeSitterPrintQueryCommand,
     TreeSitterPrintTreeCommand,
     TreeSitterSelectAncestorCommand,
     TreeSitterSelectCousinsCommand,
     TreeSitterSelectDescendantCommand,
-    TreeSitterSelectQueryCommand,
     TreeSitterSelectSiblingCommand,
     TreeSitterShowNodeUnderSelectionCommand,
     TreeSitterToggleShowNodeUnderSelectionCommand,

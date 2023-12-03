@@ -2,6 +2,6 @@
 
 (aliased_import (identifier) @definition.var)
 
-(class_definition name: (identifier) @definition.class)
+(class_definition name: (identifier) @definition.type.depth.1)
 
-(function_definition name: (identifier) @definition.function)
+(function_definition name: (identifier) @definition.function.depth.1)

@@ -95,7 +95,12 @@ def query_node_with_s(scope: str | None, query_s: str, node: Node):
     return query.captures(node)
 
 
-def query_node(scope: str | None, query_file: str, node: Node, queries_path: str | Path = ""):
+def query_node(
+    scope: str | None,
+    node: Node,
+    query_file: str,
+    queries_path: str | Path = "",
+):
     """
     Query a node with a prepared query.
     """
@@ -269,8 +274,7 @@ def get_view_name(view: sublime.View):
 
 
 def scroll_to_region(region: sublime.Region, view: sublime.View):
-    if region.b not in view.visible_region():
-        view.show(region.b)
+    view.show(region.b)
 
 
 def get_descendant(region: sublime.Region, view: sublime.View) -> Node | None:
@@ -556,15 +560,6 @@ class TreeSitterSelectDescendantCommand(sublime_plugin.TextCommand):
             scroll_to_region(new_region, self.view)
 
 
-class TreeSitterSelectQueryCommand(sublime_plugin.TextCommand):
-    """
-    Select regions corresponding to nodes matched by query.
-    """
-
-    def run(self, edit):
-        pass
-
-
 class TreeSitterGotoQueryCommand(sublime_plugin.TextCommand):
     """
     Render goto options in current buffer from tree sitter query.
@@ -577,32 +572,7 @@ class TreeSitterGotoQueryCommand(sublime_plugin.TextCommand):
 
         nodes = get_selected_nodes(self.view) or [tree_dict["tree"].root_node]
         for node in nodes:
-            print(query_node(tree_dict["scope"], SYMBOLS_FILE, node))
-
-
-class TreeSitterPrintQueryCommand(sublime_plugin.TextCommand):
-    """
-    For debugging queries.
-    """
-
-    def format_node(self, node: Node):
-        return f"{node.type}  {node.start_point} → {node.end_point}"
-
-    def run(self, edit):
-        indent = " " * 2
-        if not (tree_dict := get_tree_dict(self.view.buffer_id())):
-            return
-
-        parts: list[str] = []
-        for root_node in get_selected_nodes(self.view) or [tree_dict["tree"].root_node]:
-            for node, _ in query_node(tree_dict["scope"], SYMBOLS_FILE, root_node) or []:
-                parts.append(f"{indent * get_depth(node)}{self.format_node(node)}")
-            parts.append("")
-
-        name = get_view_name(self.view)
-        # TODO: support `Query.matches` API once it's added: https://github.com/tree-sitter/py-tree-sitter/pull/159
-        debug_view_name = f"Captures (symbols.scm) - {name}" if name else "Captures (symbols.scm)"
-        render_debug_view(self.view, debug_view_name, "\n".join(parts))
+            print(query_node(tree_dict["scope"], node, SYMBOLS_FILE))
 
 
 class TreeSitterPrintTreeCommand(sublime_plugin.TextCommand):

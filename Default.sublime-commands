@@ -36,16 +36,8 @@
     "command": "tree_sitter_select_descendant",
   },
   {
-    "caption": "TreeSitter: Select Query",
-    "command": "tree_sitter_select_query",
-  },
-  {
     "caption": "TreeSitter: Goto Query",
     "command": "tree_sitter_goto_query",
-  },
-  {
-    "caption": "TreeSitter: Print Query",
-    "command": "tree_sitter_print_query",
   },
   {
     "caption": "TreeSitter: Print Tree",

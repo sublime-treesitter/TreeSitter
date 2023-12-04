@@ -6,6 +6,7 @@ Example usage: `from sublime_tree_sitter import get_tree_dict`
 from TreeSitter.src.api import (
     get_ancestor,
     get_ancestors,
+    get_captures_from_nodes,
     get_cousins,
     get_descendant,
     get_larger_ancestor,
@@ -17,6 +18,7 @@ from TreeSitter.src.api import (
     get_tree_dict,
     get_tree_from_code,
     get_view_from_buffer_id,
+    goto_captures,
     query_node,
     query_node_with_s,
     scroll_to_region,
@@ -27,6 +29,7 @@ from TreeSitter.src.api import (
 __all__ = [
     "get_ancestor",
     "get_ancestors",
+    "get_captures_from_nodes",
     "get_cousins",
     "get_descendant",
     "get_larger_ancestor",
@@ -38,6 +41,7 @@ __all__ = [
     "get_tree_dict",
     "get_tree_from_code",
     "get_view_from_buffer_id",
+    "goto_captures",
     "query_node",
     "query_node_with_s",
     "scroll_to_region",

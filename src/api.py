@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Iterable, Literal, cast
+from typing import TYPE_CHECKING, Any, Iterable, List, Literal, Tuple, cast
 
 import sublime
 import sublime_plugin
@@ -23,6 +23,8 @@ from .utils import QUERIES_PATH, get_scope_to_language_name, maybe_none, not_non
 
 if TYPE_CHECKING:
     from tree_sitter import Node, Tree
+
+    CaptureType = Tuple[Node, str, List[Node]]
 
 SYMBOLS_FILE = "symbols.scm"
 
@@ -471,6 +473,156 @@ def show_node_under_selection(view: sublime.View, select: bool, **kwargs):
     )
 
 
+CaptureNameType = Literal["definition.type", "definition.var", "definition.function"]
+
+CAPTURE_NAME_TO_KIND: dict[CaptureNameType, sublime.Kind] = {
+    "definition.type": (sublime.KindId.TYPE, "c", "c"),
+    "definition.var": (sublime.KindId.VARIABLE, "v", "v"),
+    "definition.function": (sublime.KindId.FUNCTION, "f", "f"),
+}
+
+
+def parse_capture_name(capture_name: str) -> Tuple[str, int | None]:
+    """
+    Parse capture name and optionally captured node depth, compared with "container" depth, for rendering breadcrumbs.
+    """
+    parts = capture_name.split(".depth.", 1)
+    return (parts[0], int(parts[1])) if len(parts) == 2 else (parts[0], None)
+
+
+def get_captures_from_nodes(
+    nodes: list[Node],
+    view: sublime.View,
+    query_file: str = "symbols.scm",
+    queries_path: str | Path = "",
+) -> List[CaptureType]:
+    """
+    Get capture tuples from search nodes. Capture tuples include captured ancestors for rendering breadcrumbs.
+
+    Raises:
+        `FileNotFoundError` if query file doesn't exist
+    """
+    if not (tree_dict := get_tree_dict(view.buffer_id())):
+        return []
+
+    container_id_to_captured_node: dict[int, Node] = {}
+    captures: list[CaptureType] = []
+
+    for search_node in nodes:
+        for captured_node, capture_name in query_node(tree_dict["scope"], search_node, query_file, queries_path) or []:
+            _, depth = parse_capture_name(capture_name)
+
+            container = captured_node
+            if depth is not None:
+                for _ in range(depth):
+                    container = not_none(container.parent)
+                container_id_to_captured_node[container.id] = captured_node
+
+            # Exclude search_node from ancestors, user already knows they're searching this node
+            captured_ancestors = [
+                container_id_to_captured_node[a.id]
+                for a in get_ancestors(container)[1:]
+                if a.id in container_id_to_captured_node and a.id != search_node.id
+            ]
+            captures.append((captured_node, capture_name, captured_ancestors))
+
+    return captures
+
+
+def get_capture_kind(name: str) -> sublime.Kind:
+    """
+    For rendering `QuickPanelItem`s.
+    """
+    name, _ = parse_capture_name(name)
+    if name not in CAPTURE_NAME_TO_KIND:
+        return (sublime.KindId.AMBIGUOUS, "?", "?")
+
+    return CAPTURE_NAME_TO_KIND[name]
+
+
+def on_highlight_repaint_view(view: sublime.View):
+    """
+    Works around ST quick panel rendering bug. Modifying selection in `on_highlight` callback has no effect unless
+    viewport moves.
+
+    TODO: implementation doesn't work if entire buffer fits in viewport, because we can't scroll to force repaint.
+    """
+    DY = 2
+
+    x, y = view.viewport_position()
+    if y == 0:
+        view.set_viewport_position((x, DY))
+        view.set_viewport_position((x, 0))
+    else:
+        view.set_viewport_position((x, y - DY))
+        view.set_viewport_position((x, y))
+
+
+def goto_captures(captures: list[CaptureType], view: sublime.View):
+    """
+    Render goto options in quick panel in `view`, from list of `captures`. Captures can be gotten with
+    `get_captures_from_nodes`.
+    """
+
+    def format_node_text(text: str):
+        if " " not in text:
+            return text
+        return " ".join(text.split())
+
+    def format_breadcrumbs(ancestors: list[Node]):
+        return " ➔ ".join(format_node_text(a.text.decode()) for a in reversed(ancestors))
+
+    indent = " " * 4
+    options: list[sublime.QuickPanelItem] = []
+    for node, capture_name, ancestors in captures:
+        options.append(
+            sublime.QuickPanelItem(
+                trigger=f"{indent * len(ancestors)}{format_node_text(node.text.decode())}",
+                kind=get_capture_kind(capture_name),
+                annotation=format_breadcrumbs(ancestors),
+            )
+        )
+
+    def on_highlight(idx: int):
+        """
+        Scroll to symbol and select it.
+        """
+        node, _, _ = captures[idx]
+        a = view.text_point_utf8(*node.start_point)
+        b = view.text_point_utf8(*node.end_point)
+        region = sublime.Region(a, b)
+
+        sel = view.sel()
+        sel.clear()
+        scroll_to_region(region, view)
+        on_highlight_repaint_view(view)  # Works around ST quick panel `on_highlight` rendering bug
+        sel.add(region)
+
+    regions = [r for r in view.sel()]
+    xy = view.viewport_position()
+
+    # Find capture nearest to first selected region, and open quick panel at this index
+    selected_index = -1
+    if regions:
+        row, _ = view.rowcol(regions[0].begin())
+        for idx, (node, _, _) in enumerate(captures):
+            if row >= node.start_point[0]:
+                selected_index = idx
+
+    def on_select(idx: int):
+        """
+        If user "cancels" selection, revert selection and viewport position to initial values.
+        """
+        if idx == -1:
+            view.set_viewport_position(xy)
+            sel = view.sel()
+            sel.clear()
+            sel.add_all(regions)
+
+    window = not_none(view.window())
+    window.show_quick_panel(options, on_select=on_select, on_highlight=on_highlight, selected_index=selected_index)
+
+
 #
 # Select, query and debug commands
 #
@@ -573,16 +725,23 @@ class TreeSitterSelectDescendantCommand(sublime_plugin.TextCommand):
 class TreeSitterGotoQueryCommand(sublime_plugin.TextCommand):
     """
     Render goto options in current buffer from tree sitter query.
+
+    If query returns no captures, or query file for this language/path doesn't exist, fall back to built-in goto text
+    command.
     """
 
     def run(self, edit):
-        # TODO: finish this
         if not (tree_dict := get_tree_dict(self.view.buffer_id())):
             return
 
-        nodes = get_selected_nodes(self.view) or [tree_dict["tree"].root_node]
-        for node in nodes:
-            print(query_node(tree_dict["scope"], node, SYMBOLS_FILE))
+        try:
+            captures = get_captures_from_nodes([tree_dict["tree"].root_node], self.view)
+        except FileNotFoundError:
+            pass
+        else:
+            return goto_captures(captures, self.view)
+
+        not_none(self.view.window()).run_command("show_overlay", {"overlay": "goto", "text": "@"})
 
 
 class TreeSitterPrintTreeCommand(sublime_plugin.TextCommand):
@@ -629,8 +788,6 @@ class TreeSitterToggleShowNodeUnderSelectionCommand(sublime_plugin.TextCommand):
     For debugging, toggle a setting to render a popup with info about the node under the first cursor/selection,
     whenever the selection changes.
     """
-
-    SETTINGS_NAME = "tree_sitter.show_node_under_selection"
 
     def run(self, edit):
         settings = self.view.settings()

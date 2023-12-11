@@ -97,6 +97,26 @@ def query_node_with_s(scope: str | None, query_s: str, node: Node):
     return query.captures(node)
 
 
+def get_query_s_from_file(queries_path: str | Path, query_file: str, language_name: str) -> str:
+    """
+    Handle `inherits` "pragmas" of the following structure: `; inherits: lang(,other_lang)`
+    """
+    INHERITS_PREFIX = "; inherits:"
+    path = Path(queries_path) / language_name / query_file
+
+    with open(path, "r") as f:
+        query_s = f.read()
+
+    languages: list[str] = []
+    with open(path, "r") as f:
+        for line in f:
+            if line.startswith(INHERITS_PREFIX):
+                languages = [lang.strip() for lang in line.split(INHERITS_PREFIX)[1].split(",") if lang]
+
+    queries = [get_query_s_from_file(queries_path, query_file=query_file, language_name=lang) for lang in languages]
+    return "\n".join([query_s, *queries])
+
+
 def query_node(
     scope: str | None,
     node: Node,
@@ -111,10 +131,7 @@ def query_node(
     language_name = get_scope_to_language_name()[scope]
 
     queries_path = os.path.expanduser(queries_path or QUERIES_PATH)
-    path = Path(queries_path) / language_name / query_file
-
-    with open(path, "r") as f:
-        query_s = f.read()
+    query_s = get_query_s_from_file(queries_path, query_file=query_file, language_name=language_name)
     return query_node_with_s(scope, query_s, node)
 
 
@@ -786,7 +803,7 @@ class TreeSitterSelectQueryCommand(sublime_plugin.TextCommand):
         if captures:
             sel = self.view.sel()
             sel.clear()
-            for node, _, _ in captures:
+            for node, _, _, _ in captures:
                 sel.add(get_region_from_node(node, self.view))
 
 

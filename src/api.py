@@ -586,17 +586,14 @@ def get_capture_kind(name: str) -> sublime.Kind:
 def on_highlight_repaint_view(view: sublime.View):
     """
     Works around ST quick panel rendering bug. Modifying selection in `on_highlight` callback has no effect unless
-    viewport moves or its contents change.
-    """
-    DY = 2
+    viewport moves or its contents change. Notes on the implementation:
 
-    x, y = view.viewport_position()
-    if y == 0:
-        view.set_viewport_position((x, DY))
-        view.set_viewport_position((x, 0))
-    else:
-        view.set_viewport_position((x, y - DY))
-        view.set_viewport_position((x, y))
+    - Unlike using `View.set_viewport_position`, this works even if the buffer contents all fit in the viewport
+    - Its only side effect is to unfold any folded region including `Region(0, 1)`
+    """
+    region = sublime.Region(0, 1)
+    view.fold(region)
+    view.unfold(region)
 
 
 def goto_captures(captures: list[CaptureType], view: sublime.View):

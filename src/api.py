@@ -498,6 +498,7 @@ CaptureNameType = Literal[
     "definition.call",
     "definition.object",
     "definition.interface",
+    "definition.element",
 ]
 
 CAPTURE_NAME_TO_KIND: dict[CaptureNameType, sublime.Kind] = {
@@ -508,6 +509,7 @@ CAPTURE_NAME_TO_KIND: dict[CaptureNameType, sublime.Kind] = {
     "definition.function": (sublime.KindId.FUNCTION, "f", "f"),
     "definition.call": (sublime.KindId.COLOR_ORANGISH, "l", "l"),
     "definition.object": (sublime.KindId.VARIABLE, "o", "o"),
+    "definition.element": (sublime.KindId.VARIABLE, "e", "e"),
 }
 
 

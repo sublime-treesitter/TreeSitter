@@ -74,4 +74,4 @@ class MyTreeSitterCommand(sublime_plugin.WindowCommand):
 
 ## License
 
-Licensed under the [MIT License](https://opensource.org/licenses/MIT).
+[MIT](https://opensource.org/licenses/MIT).

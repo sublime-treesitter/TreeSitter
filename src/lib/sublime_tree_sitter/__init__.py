@@ -21,7 +21,6 @@ from TreeSitter.src.api import (
     goto_captures,
     query_node,
     query_node_with_s,
-    scroll_to_region,
     show_node_under_selection,
     walk_tree,
 )
@@ -44,7 +43,6 @@ __all__ = [
     "goto_captures",
     "query_node",
     "query_node_with_s",
-    "scroll_to_region",
     "show_node_under_selection",
     "walk_tree",
 ]

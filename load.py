@@ -5,6 +5,7 @@ from .src.api import (  # noqa: F401
     TreeSitterSelectAncestorCommand,
     TreeSitterSelectCousinsCommand,
     TreeSitterSelectDescendantCommand,
+    TreeSitterSelectQueryCommand,
     TreeSitterSelectSiblingCommand,
     TreeSitterShowNodeUnderSelectionCommand,
     TreeSitterToggleShowNodeUnderSelectionCommand,

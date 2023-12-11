@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Iterable, List, Literal, Tuple, cast
+from typing import TYPE_CHECKING, Any, Iterable, List, Literal, Tuple, TypedDict, cast
 
 import sublime
 import sublime_plugin
@@ -23,8 +23,6 @@ from .utils import QUERIES_PATH, get_scope_to_language_name, maybe_none, not_non
 
 if TYPE_CHECKING:
     from tree_sitter import Node, Tree
-
-    CaptureType = Tuple[Node, str, List[Node], int]
 
 SYMBOLS_FILE = "symbols.scm"
 
@@ -401,13 +399,13 @@ def get_cousins(
     return [cousins[-1]]
 
 
-def get_selected_nodes(view: sublime.View) -> list[Node]:
+def get_selected_nodes(view: sublime.View, include_emtpy_regions: bool = False) -> list[Node]:
     """
     Get nodes selected in `view`.
     """
     nodes: list[Node] = []
     for region in view.sel():
-        if len(region) > 0:
+        if include_emtpy_regions or len(region) > 0:
             node = get_node_spanning_region(region, view.buffer_id())
             if node:
                 nodes.append(node)
@@ -513,15 +511,31 @@ CAPTURE_NAME_TO_KIND: dict[CaptureNameType, sublime.Kind] = {
 }
 
 
+BREADCRUMB_CAPTURE_NAME = "bc"
+
+
 def parse_capture_name(capture_name: str) -> Tuple[str, int | None]:
     """
-    Parse capture name and optionally captured node depth, compared with "container" depth, for rendering breadcrumbs.
+    Parse capture name, and for breadcrumb nodes, breadcrumb node depth compared with "container" depth.
     """
-    parts = capture_name.split(".depth.", 1)
+    parts = capture_name.split(f".{BREADCRUMB_CAPTURE_NAME}.", 1)
     return (parts[0], int(parts[1])) if len(parts) == 2 else (parts[0], None)
 
 
-BLOCK_CAPTURE_NAME = "definition.block"
+ANONYMOUS_BREADCRUMB_CAPTURE_NAME = "anonymous.bc"
+
+
+class BreadcrumbDict(TypedDict):
+    node: Node
+    name: str
+    container: Node
+
+
+class CaptureDict(TypedDict):
+    node: Node
+    name: str
+    breadcrumbs: List[BreadcrumbDict]
+    search_node: Node
 
 
 def get_captures_from_nodes(
@@ -529,7 +543,7 @@ def get_captures_from_nodes(
     view: sublime.View,
     query_file: str = SYMBOLS_FILE,
     queries_path: str | Path = "",
-) -> List[CaptureType]:
+) -> List[CaptureDict]:
     """
     Get capture tuples from search nodes. Capture tuples include captured ancestors for rendering breadcrumbs.
 
@@ -540,32 +554,32 @@ def get_captures_from_nodes(
     if not (tree_dict := get_tree_dict(view.buffer_id())):
         return []
 
-    container_id_to_captured_node: dict[int, Tuple[Node, str]] = {}
-    captures: list[CaptureType] = []
+    container_id_to_breadcrumb: dict[int, BreadcrumbDict] = {}
+    captures: list[CaptureDict] = []
 
     for search_node in nodes:
         for captured_node, capture_name in query_node(tree_dict["scope"], search_node, query_file, queries_path) or []:
             _, depth = parse_capture_name(capture_name)
 
             container = captured_node
-            if depth is not None or capture_name == BLOCK_CAPTURE_NAME:
+            if depth is not None or capture_name == ANONYMOUS_BREADCRUMB_CAPTURE_NAME:
                 for _ in range(depth or 0):
                     container = not_none(container.parent)
-                container_id_to_captured_node[container.id] = (captured_node, capture_name)
+                breadcrumb = BreadcrumbDict(node=captured_node, name=capture_name, container=container)
+                container_id_to_breadcrumb[container.id] = breadcrumb
 
-            # Exclude search_node from ancestors, user already knows they're searching this node
-            captured_ancestors = [
-                container_id_to_captured_node[a.id]
-                for a in get_ancestors(container)[1:]
-                if a.id in container_id_to_captured_node and a.id != search_node.id
-            ]
-            if capture_name != BLOCK_CAPTURE_NAME:
+            if capture_name != ANONYMOUS_BREADCRUMB_CAPTURE_NAME:
+                # Exclude search_node from ancestors, user already knows they're searching this node
                 captures.append(
-                    (
-                        captured_node,
-                        capture_name,
-                        [node for node, name in captured_ancestors if name != BLOCK_CAPTURE_NAME],
-                        len(captured_ancestors),
+                    CaptureDict(
+                        node=captured_node,
+                        name=capture_name,
+                        breadcrumbs=[
+                            container_id_to_breadcrumb[a.id]
+                            for a in get_ancestors(container)[1:]
+                            if a.id in container_id_to_breadcrumb
+                        ],
+                        search_node=search_node,
                     )
                 )
 
@@ -596,7 +610,7 @@ def on_highlight_repaint_view(view: sublime.View):
     view.unfold(region)
 
 
-def goto_captures(captures: list[CaptureType], view: sublime.View):
+def goto_captures(captures: list[CaptureDict], view: sublime.View):
     """
     Render goto options in quick panel in `view`, from list of `captures`. Captures can be gotten with
     `get_captures_from_nodes`.
@@ -612,12 +626,18 @@ def goto_captures(captures: list[CaptureType], view: sublime.View):
 
     indent = " " * 4
     options: list[sublime.QuickPanelItem] = []
-    for node, capture_name, ancestors, depth in captures:
+    for capture in captures:
+        breadcrumbs = capture["breadcrumbs"]
+        printable_breadcrumbs = [
+            bc["node"]
+            for bc in breadcrumbs
+            if bc["name"] != ANONYMOUS_BREADCRUMB_CAPTURE_NAME and bc["container"] != capture["search_node"]
+        ]
         options.append(
             sublime.QuickPanelItem(
-                trigger=f"{indent * depth}{format_node_text(node.text.decode())}",
-                kind=get_capture_kind(capture_name),
-                annotation=format_breadcrumbs(ancestors),
+                trigger=f"{indent * len(breadcrumbs)}{format_node_text(capture['node'].text.decode())}",
+                kind=get_capture_kind(capture["name"]),
+                annotation=format_breadcrumbs(printable_breadcrumbs),
             )
         )
 
@@ -625,7 +645,7 @@ def goto_captures(captures: list[CaptureType], view: sublime.View):
         """
         Scroll to symbol and select it.
         """
-        node, _, _, _ = captures[idx]
+        node = captures[idx]["node"]
         a = view.text_point_utf8(*node.start_point)
         b = view.text_point_utf8(*node.end_point)
         region = sublime.Region(a, b)
@@ -643,8 +663,8 @@ def goto_captures(captures: list[CaptureType], view: sublime.View):
     selected_index = -1
     if regions:
         row, _ = view.rowcol(regions[0].begin())
-        for idx, (node, _, _, _) in enumerate(captures):
-            if row >= node.start_point[0]:
+        for idx, capture in enumerate(captures):
+            if row >= capture["node"].start_point[0]:
                 selected_index = idx
 
     def on_select(idx: int):
@@ -802,8 +822,8 @@ class TreeSitterSelectQueryCommand(sublime_plugin.TextCommand):
         if captures:
             sel = self.view.sel()
             sel.clear()
-            for node, _, _, _ in captures:
-                sel.add(get_region_from_node(node, self.view))
+            for capture in captures:
+                sel.add(get_region_from_node(capture["node"], self.view))
 
 
 class TreeSitterPrintTreeCommand(sublime_plugin.TextCommand):

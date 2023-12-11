@@ -1,3 +1,3 @@
 ; inherits: ecma
 
-(class_declaration (identifier) @definition.class.depth.1)
+(class_declaration (identifier) @definition.class.bc.1)

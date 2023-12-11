@@ -7,7 +7,7 @@
 
 (program (lexical_declaration (variable_declarator
   [
-    ((identifier) @definition.object.depth.1 (object))
+    ((identifier) @definition.object.bc.1 (object))
     ((identifier) @definition.var [
       (number) (string) (template_string) (null) (undefined) (new_expression) (call_expression) (array) (member_expression)
     ])
@@ -15,7 +15,7 @@
 )))
 (program (export_statement (lexical_declaration (variable_declarator
   [
-    ((identifier) @definition.object.depth.1 (object))
+    ((identifier) @definition.object.bc.1 (object))
     ((identifier) @definition.var [
       (number) (string) (template_string) (null) (undefined) (new_expression) (call_expression) (array) (member_expression)
     ])

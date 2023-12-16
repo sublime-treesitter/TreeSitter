@@ -140,16 +140,14 @@ def walk_tree(tree_or_node: Tree | Node, max_depth: int | None = None):
     See https://github.com/tree-sitter/py-tree-sitter/issues/33#issuecomment-864557166
     """
     cursor = tree_or_node.walk()
-    depth = 0
 
     reached_root = False
     while not reached_root:
-        yield cursor.node, depth
+        yield cursor.node, cursor
 
-        if max_depth is None or depth < max_depth:
+        if max_depth is None or cursor.depth < max_depth:
             # Don't walk children if we've already reached `max_depth`
             if cursor.goto_first_child():
-                depth += 1
                 continue
 
         if cursor.goto_next_sibling():
@@ -161,7 +159,6 @@ def walk_tree(tree_or_node: Tree | Node, max_depth: int | None = None):
                 retracing = False
                 reached_root = True
 
-            depth -= 1
             if cursor.goto_next_sibling():
                 retracing = False
 
@@ -375,8 +372,8 @@ def get_cousins(
     node_depth = len(ancestors) - 1
 
     cousins: list[Node] = []
-    for cousin, depth in walk_tree(ancestors[-1], max_depth=node_depth):
-        if depth != node_depth:
+    for cousin, cursor in walk_tree(ancestors[-1], max_depth=node_depth):
+        if cursor.depth != node_depth:
             continue
         if same_text and cousin.text != node.text:
             continue
@@ -442,6 +439,17 @@ def render_node_html(pairs: Iterable[tuple[str, str]]):
     return f'<body id="tree-sitter-node-info">{info_list}<br/><br/>{copy_button}</body>'
 
 
+def get_field_name(node: Node) -> str | None:
+    """
+    Because there's no `Node.field_name` method or similar.
+    """
+    if not (parent := node.parent):
+        return
+    for idx, sibling in enumerate(parent.children):
+        if sibling.id == node.id:
+            return parent.field_name_for_child(idx)
+
+
 def show_node_under_selection(view: sublime.View, select: bool, **kwargs):
     """
     Render a popup with info about the node under the first cursor/selection. If there are multiple nodes with the same
@@ -465,16 +473,22 @@ def show_node_under_selection(view: sublime.View, select: bool, **kwargs):
         node = node.parent
         nodes.append(node)
 
+    node = nodes[0]
     pairs: list[tuple[str, str]] = [
-        ("type", nodes[0].type),
-        ("depth", str(get_depth(nodes[0]))),
+        ("type", node.type),
+        ("depth", str(get_depth(node))),
         ("range", f"{node.start_point} → {node.end_point}"),
         ("lang", get_scope_to_language_name()[tree_dict["scope"]]),
         ("scope", tree_dict["scope"]),
     ]
+    if field_name := get_field_name(node):
+        pairs.insert(1, ("field", field_name))
+
     for node in nodes[1:]:
         pairs.insert(0, ("", "➔"))
         pairs.insert(0, ("depth", str(get_depth(node))))
+        if field_name := get_field_name(node):
+            pairs.insert(0, ("field", field_name))
         pairs.insert(0, ("type", node.type))
 
     def on_navigate(href: str):
@@ -831,7 +845,9 @@ class TreeSitterPrintTreeCommand(sublime_plugin.TextCommand):
     For debugging. If nothing selected, print syntax tree for buffer. Else, print segment(s) of tree for selection(s).
     """
 
-    def format_node(self, node: Node):
+    def format_node(self, node: Node, field_name: str | None = None):
+        if field_name:
+            return f"{node.type} [{field_name}]  {node.start_point} → {node.end_point}"
         return f"{node.type}  {node.start_point} → {node.end_point}"
 
     def run(self, edit):
@@ -844,7 +860,7 @@ class TreeSitterPrintTreeCommand(sublime_plugin.TextCommand):
             while root_node.parent and get_size(root_node) == get_size(root_node.parent):
                 # Move to "shallowest" ancestor with the same size as node spanning region
                 root_node = root_node.parent
-            parts.extend([f"{indent * depth}{self.format_node(node)}" for node, depth in walk_tree(root_node)])
+            parts.extend([f"{indent * c.depth}{self.format_node(n, c.field_name)}" for n, c in walk_tree(root_node)])
             parts.append("")
 
         name = get_view_name(self.view)

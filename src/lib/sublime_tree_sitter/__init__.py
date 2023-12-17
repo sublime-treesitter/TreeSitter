@@ -4,6 +4,10 @@ Public-facing functions to interface with Tree-sitter, designed for use by other
 Example usage: `from sublime_tree_sitter import get_tree_dict`
 """
 from TreeSitter.src.api import (
+    BreadcrumbDict,
+    CaptureDict,
+    contains,
+    format_breadcrumbs,
     get_ancestor,
     get_ancestors,
     get_captures_from_nodes,
@@ -15,6 +19,7 @@ from TreeSitter.src.api import (
     get_scope_to_language_name,
     get_selected_nodes,
     get_sibling,
+    get_size,
     get_tracked_buffer_ids,
     get_tree_dict,
     get_tree_from_code,
@@ -27,6 +32,10 @@ from TreeSitter.src.api import (
 )
 
 __all__ = [
+    "BreadcrumbDict",
+    "CaptureDict",
+    "contains",
+    "format_breadcrumbs",
     "get_ancestor",
     "get_ancestors",
     "get_captures_from_nodes",
@@ -38,6 +47,7 @@ __all__ = [
     "get_scope_to_language_name",
     "get_selected_nodes",
     "get_sibling",
+    "get_size",
     "get_tracked_buffer_ids",
     "get_tree_dict",
     "get_tree_from_code",

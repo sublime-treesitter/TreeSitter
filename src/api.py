@@ -241,6 +241,13 @@ def get_region_from_node(node: Node, buffer_id_or_view: int | sublime.View, reve
     return sublime.Region(a=p_a if not reverse else p_b, b=p_b if not reverse else p_a)
 
 
+def contains(a: Node, b: Node) -> bool:
+    """
+    Does node `a` contain `b`?
+    """
+    return a.start_byte <= b.start_byte and a.end_byte >= b.end_byte
+
+
 def get_size(node: Node) -> int:
     """
     Get size of node in bytes.
@@ -542,6 +549,7 @@ ANONYMOUS_BREADCRUMB_CAPTURE_NAME = "anonymous.bc"
 class BreadcrumbDict(TypedDict):
     node: Node
     name: str
+    depth: int
     container: Node
 
 
@@ -550,6 +558,7 @@ class CaptureDict(TypedDict):
     name: str
     breadcrumbs: List[BreadcrumbDict]
     search_node: Node
+    breadcrumb: BreadcrumbDict | None
 
 
 def get_captures_from_nodes(
@@ -573,13 +582,16 @@ def get_captures_from_nodes(
 
     for search_node in nodes:
         for captured_node, capture_name in query_node(tree_dict["scope"], search_node, query_file, queries_path) or []:
-            _, depth = parse_capture_name(capture_name)
+            _, bc_depth = parse_capture_name(capture_name)
 
+            breadcrumb: BreadcrumbDict | None = None
             container = captured_node
-            if depth is not None or capture_name == ANONYMOUS_BREADCRUMB_CAPTURE_NAME:
-                for _ in range(depth or 0):
+            if bc_depth is not None or capture_name == ANONYMOUS_BREADCRUMB_CAPTURE_NAME:
+                for _ in range(bc_depth or 0):
                     container = not_none(container.parent)
-                breadcrumb = BreadcrumbDict(node=captured_node, name=capture_name, container=container)
+                breadcrumb = BreadcrumbDict(
+                    node=captured_node, name=capture_name, container=container, depth=bc_depth or 0
+                )
                 container_id_to_breadcrumb[container.id] = breadcrumb
 
             if capture_name != ANONYMOUS_BREADCRUMB_CAPTURE_NAME:
@@ -594,6 +606,7 @@ def get_captures_from_nodes(
                             if a.id in container_id_to_breadcrumb
                         ],
                         search_node=search_node,
+                        breadcrumb=breadcrumb,
                     )
                 )
 
@@ -624,20 +637,21 @@ def on_highlight_repaint_view(view: sublime.View):
     view.unfold(region)
 
 
+def format_node_text(text: str):
+    if " " not in text:
+        return text
+    return " ".join(text.split())
+
+
+def format_breadcrumbs(breadcrumbs: list[Node]):
+    return " ➔ ".join(format_node_text(a.text.decode()) for a in reversed(breadcrumbs))
+
+
 def goto_captures(captures: list[CaptureDict], view: sublime.View):
     """
     Render goto options in quick panel in `view`, from list of `captures`. Captures can be gotten with
     `get_captures_from_nodes`.
     """
-
-    def format_node_text(text: str):
-        if " " not in text:
-            return text
-        return " ".join(text.split())
-
-    def format_breadcrumbs(ancestors: list[Node]):
-        return " ➔ ".join(format_node_text(a.text.decode()) for a in reversed(ancestors))
-
     indent = " " * 4
     options: list[sublime.QuickPanelItem] = []
     for capture in captures:

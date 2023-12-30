@@ -96,7 +96,6 @@ ScopeType = Literal[
     "text.xml",
 ]
 
-
 LANGUAGE_NAME_TO_SCOPES: Dict[str, List[ScopeType]] = {
     "python": ["source.python"],
     "typescript": ["source.ts"],

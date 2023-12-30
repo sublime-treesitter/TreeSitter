@@ -512,12 +512,14 @@ def show_node_under_selection(view: sublime.View, select: bool, **kwargs):
 CaptureNameType = Literal[
     "definition.type",
     "definition.class",
+    "definition.interface",
     "definition.var",
+    "definition.constant",
+    "definition.object",
+    "definition.element",
     "definition.function",
     "definition.call",
-    "definition.object",
-    "definition.interface",
-    "definition.element",
+    "definition.block",
 ]
 
 CAPTURE_NAME_TO_KIND: dict[CaptureNameType, sublime.Kind] = {
@@ -525,10 +527,12 @@ CAPTURE_NAME_TO_KIND: dict[CaptureNameType, sublime.Kind] = {
     "definition.type": (sublime.KindId.TYPE, "t", "t"),
     "definition.interface": (sublime.KindId.TYPE, "i", "i"),
     "definition.var": (sublime.KindId.VARIABLE, "v", "v"),
-    "definition.function": (sublime.KindId.FUNCTION, "f", "f"),
-    "definition.call": (sublime.KindId.COLOR_ORANGISH, "l", "l"),
+    "definition.constant": (sublime.KindId.VARIABLE, "c", "c"),
     "definition.object": (sublime.KindId.VARIABLE, "o", "o"),
     "definition.element": (sublime.KindId.VARIABLE, "e", "e"),
+    "definition.function": (sublime.KindId.FUNCTION, "f", "f"),
+    "definition.call": (sublime.KindId.COLOR_ORANGISH, "l", "l"),
+    "definition.block": (sublime.KindId.COLOR_DARK, "b", "b"),
 }
 
 
@@ -541,9 +545,6 @@ def parse_capture_name(capture_name: str) -> Tuple[str, int | None]:
     """
     parts = capture_name.split(f".{BREADCRUMB_CAPTURE_NAME}.", 1)
     return (parts[0], int(parts[1])) if len(parts) == 2 else (parts[0], None)
-
-
-ANONYMOUS_BREADCRUMB_CAPTURE_NAME = "anonymous.bc"
 
 
 class BreadcrumbDict(TypedDict):
@@ -586,7 +587,7 @@ def get_captures_from_nodes(
 
             breadcrumb: BreadcrumbDict | None = None
             container = captured_node
-            if bc_depth is not None or capture_name == ANONYMOUS_BREADCRUMB_CAPTURE_NAME:
+            if bc_depth is not None:
                 for _ in range(bc_depth or 0):
                     container = not_none(container.parent)
                 breadcrumb = BreadcrumbDict(
@@ -594,21 +595,20 @@ def get_captures_from_nodes(
                 )
                 container_id_to_breadcrumb[container.id] = breadcrumb
 
-            if capture_name != ANONYMOUS_BREADCRUMB_CAPTURE_NAME:
-                # Exclude search_node from ancestors, user already knows they're searching this node
-                captures.append(
-                    CaptureDict(
-                        node=captured_node,
-                        name=capture_name,
-                        breadcrumbs=[
-                            container_id_to_breadcrumb[a.id]
-                            for a in get_ancestors(container)[1:]
-                            if a.id in container_id_to_breadcrumb
-                        ],
-                        search_node=search_node,
-                        breadcrumb=breadcrumb,
-                    )
+            # Exclude search_node from ancestors, user already knows they're searching this node
+            captures.append(
+                CaptureDict(
+                    node=captured_node,
+                    name=capture_name,
+                    breadcrumbs=[
+                        container_id_to_breadcrumb[a.id]
+                        for a in get_ancestors(container)[1:]
+                        if a.id in container_id_to_breadcrumb
+                    ],
+                    search_node=search_node,
+                    breadcrumb=breadcrumb,
                 )
+            )
 
     return captures
 
@@ -656,11 +656,7 @@ def goto_captures(captures: list[CaptureDict], view: sublime.View):
     options: list[sublime.QuickPanelItem] = []
     for capture in captures:
         breadcrumbs = capture["breadcrumbs"]
-        printable_breadcrumbs = [
-            bc["node"]
-            for bc in breadcrumbs
-            if bc["name"] != ANONYMOUS_BREADCRUMB_CAPTURE_NAME and bc["container"] != capture["search_node"]
-        ]
+        printable_breadcrumbs = [bc["node"] for bc in breadcrumbs if bc["container"] != capture["search_node"]]
         options.append(
             sublime.QuickPanelItem(
                 trigger=f"{indent * len(breadcrumbs)}{format_node_text(capture['node'].text.decode())}",

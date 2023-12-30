@@ -56,6 +56,7 @@ class SettingsDict(TypedDict):
     language_name_to_parser_path: Dict[str, str] | None
     language_name_to_debounce_ms: Dict[str, float] | None
     debug: bool | None
+    queries_path: str | None
 
 
 ScopeType = Literal[
@@ -211,6 +212,10 @@ def get_settings():
     return sublime.load_settings(SETTINGS_FILENAME)
 
 
+def get_debug():
+    return get_settings_dict().get("debug") or False
+
+
 def get_settings_dict():
     return cast(SettingsDict, get_settings().to_dict())
 
@@ -242,3 +247,7 @@ def get_language_name_to_repo():
 def get_language_name_to_parser_path():
     settings_d = get_settings_dict().get("language_name_to_parser_path") or {}
     return {**LANGUAGE_NAME_TO_PARSER_PATH, **settings_d}
+
+
+def get_queries_path():
+    return get_settings_dict().get("queries_path") or ""

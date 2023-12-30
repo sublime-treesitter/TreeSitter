@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import traceback
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterable, List, Literal, Tuple, TypedDict, cast
 
@@ -19,7 +20,7 @@ from .core import (
     publish_tree_update,
     trim_cached_trees,
 )
-from .utils import QUERIES_PATH, get_scope_to_language_name, maybe_none, not_none
+from .utils import QUERIES_PATH, get_debug, get_queries_path, get_scope_to_language_name, log, maybe_none, not_none
 
 if TYPE_CHECKING:
     from tree_sitter import Node, Tree
@@ -581,6 +582,8 @@ def get_captures_from_nodes(
     container_id_to_breadcrumb: dict[int, BreadcrumbDict] = {}
     captures: list[CaptureDict] = []
 
+    queries_path = queries_path or get_queries_path()
+
     for search_node in nodes:
         for captured_node, capture_name in query_node(tree_dict["scope"], search_node, query_file, queries_path) or []:
             _, bc_depth = parse_capture_name(capture_name)
@@ -595,7 +598,6 @@ def get_captures_from_nodes(
                 )
                 container_id_to_breadcrumb[container.id] = breadcrumb
 
-            # Exclude search_node from ancestors, user already knows they're searching this node
             captures.append(
                 CaptureDict(
                     node=captured_node,
@@ -664,6 +666,15 @@ def goto_captures(captures: list[CaptureDict], view: sublime.View):
                 annotation=format_breadcrumbs(printable_breadcrumbs),
             )
         )
+
+    goto_capture_options(captures, options, view)
+
+
+def goto_capture_options(captures: list[CaptureDict], options: List[sublime.QuickPanelItem], view: sublime.View):
+    """
+    Separate from `goto_captures` so that users can easily write a version of `TreeSitterGotoQueryCommand` with
+    custom "goto options".
+    """
 
     def on_highlight(idx: int):
         """
@@ -820,9 +831,15 @@ class TreeSitterGotoQueryCommand(sublime_plugin.TextCommand):
             return self.fallback()
 
         try:
-            captures = get_captures_from_nodes([tree_dict["tree"].root_node], self.view)
-        except FileNotFoundError:
-            pass
+            captures = get_captures_from_nodes(
+                [tree_dict["tree"].root_node],
+                self.view,
+                query_file=query_file,
+                queries_path=queries_path,
+            )
+        except FileNotFoundError as e:
+            if get_debug():
+                log("".join(traceback.format_exception(None, e, e.__traceback__)))
         else:
             if captures:
                 return goto_captures(captures, self.view)
@@ -840,7 +857,10 @@ class TreeSitterSelectQueryCommand(sublime_plugin.TextCommand):
             return
 
         captures = get_captures_from_nodes(
-            [tree_dict["tree"].root_node], self.view, query_file=query_file, queries_path=queries_path
+            [tree_dict["tree"].root_node],
+            self.view,
+            query_file=query_file,
+            queries_path=queries_path,
         )
 
         if captures:

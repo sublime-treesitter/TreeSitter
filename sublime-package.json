@@ -89,6 +89,10 @@
               },
               "markdownDescription": "Debounce parsing for parsers that are slow"
             },
+            "queries_path": {
+              "type": "string",
+              "markdownDescription": "Path to queries files for all languages"
+            },
             "debug": {
               "type": "boolean",
               "markdownDescription": "Enable debug logging and assertions; has non-zero performance cost, for developers only"

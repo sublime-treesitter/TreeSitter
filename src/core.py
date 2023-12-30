@@ -56,6 +56,7 @@ from .utils import (
     SETTINGS_FILENAME,
     ScopeType,
     add_path,
+    get_debug,
     get_language_name_to_debounce_ms,
     get_language_name_to_parser_path,
     get_language_name_to_repo,
@@ -583,7 +584,7 @@ class TreeSitterTextChangeListener(sublime_plugin.TextChangeListener):
     def __init__(self, *args, **kwargs):
         self.debounce_ms: int | None = None
         self.last_text_changed_s = 0
-        self.debug: bool = get_settings_dict().get("debug") or False
+        self.debug = get_debug()
         super().__init__(*args, **kwargs)
 
     @property

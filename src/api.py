@@ -656,7 +656,7 @@ def format_node_text(text: str):
 
 
 def format_breadcrumbs(breadcrumbs: list[Node]):
-    return " ➔ ".join(format_node_text(a.text.decode()) for a in reversed(breadcrumbs))
+    return " > ".join(format_node_text(a.text.decode()) for a in reversed(breadcrumbs))
 
 
 def goto_captures(captures: list[CaptureDict], view: sublime.View):
@@ -664,16 +664,14 @@ def goto_captures(captures: list[CaptureDict], view: sublime.View):
     Render goto options in quick panel in `view`, from list of `captures`. Captures can be gotten with
     `get_captures_from_nodes`.
     """
-    indent = " " * 4
     options: list[sublime.QuickPanelItem] = []
     for capture in captures:
         breadcrumbs = capture["breadcrumbs"]
-        printable_breadcrumbs = [bc["node"] for bc in breadcrumbs if bc["container"] != capture["search_node"]]
         options.append(
             sublime.QuickPanelItem(
-                trigger=f"{indent * len(breadcrumbs)}{format_node_text(capture['node'].text.decode())}",
+                trigger=f"{'. ' * len(breadcrumbs)}{format_node_text(capture['node'].text.decode())}",
                 kind=get_capture_kind(capture["name"]),
-                annotation=format_breadcrumbs(printable_breadcrumbs),
+                details=format_breadcrumbs([bc["node"] for bc in breadcrumbs]),
             )
         )
 
@@ -682,7 +680,7 @@ def goto_captures(captures: list[CaptureDict], view: sublime.View):
 
 def goto_capture_options(captures: list[CaptureDict], options: List[sublime.QuickPanelItem], view: sublime.View):
     """
-    Separate from `goto_captures` so that users can easily rewrite `goto_captures`.
+    Separate from `goto_captures` so that users can easily write their own `goto_captures`.
     """
 
     def on_highlight(idx: int):

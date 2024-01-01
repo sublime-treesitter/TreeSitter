@@ -544,12 +544,12 @@ CAPTURE_NAME_TO_KIND: dict[CaptureNameType, sublime.Kind] = {
 BREADCRUMB_CAPTURE_NAME = "breadcrumb"
 
 
-def parse_capture_name(capture_name: str) -> Tuple[str, int | None]:
+def parse_breadcrumb_depth(capture_name: str) -> int:
     """
-    Parse capture name, and for breadcrumb nodes, breadcrumb node depth compared with "container" depth.
+    For breadcrumb nodes, parse breadcrumb node depth compared with "container" depth.
     """
-    parts = capture_name.split(f".{BREADCRUMB_CAPTURE_NAME}.", 1)
-    return (parts[0], int(parts[1])) if len(parts) == 2 else (parts[0], None)
+    parts = capture_name.split(".")
+    return int(parts[1]) if len(parts) == 2 else 0
 
 
 class BreadcrumbDict(TypedDict):
@@ -586,6 +586,7 @@ def get_captures_from_nodes(
         return []
 
     container_id_to_breadcrumb: dict[int, BreadcrumbDict] = {}
+    node_id_to_breadcrumb_depth: dict[int, int] = {}
     captures: list[CaptureDict] = []
 
     queries_path = queries_path or get_queries_path()
@@ -600,17 +601,21 @@ def get_captures_from_nodes(
                 log("".join(traceback.format_exception(None, e, e.__traceback__)))
             return []
 
+        # Do a first pass through captured nodes to see which ones are "breadcrumbs"
         for captured_node, capture_name in query_captures or []:
-            _, bc_depth = parse_capture_name(capture_name)
+            if capture_name.startswith(BREADCRUMB_CAPTURE_NAME):
+                node_id_to_breadcrumb_depth[captured_node.id] = parse_breadcrumb_depth(capture_name)
+
+        for captured_node, capture_name in query_captures or []:
+            if capture_name.startswith(BREADCRUMB_CAPTURE_NAME):
+                continue
 
             breadcrumb: BreadcrumbDict | None = None
             container = captured_node
-            if bc_depth is not None:
-                for _ in range(bc_depth or 0):
+            if (bc_depth := node_id_to_breadcrumb_depth.get(captured_node.id, None)) is not None:
+                for _ in range(bc_depth):
                     container = not_none(container.parent)
-                breadcrumb = BreadcrumbDict(
-                    node=captured_node, name=capture_name, container=container, depth=bc_depth or 0
-                )
+                breadcrumb = BreadcrumbDict(node=captured_node, name=capture_name, container=container, depth=bc_depth)
                 container_id_to_breadcrumb[container.id] = breadcrumb
 
             captures.append(
@@ -634,10 +639,8 @@ def get_capture_kind(name: str) -> sublime.Kind:
     """
     For rendering `QuickPanelItem`s.
     """
-    name, _ = parse_capture_name(name)
     if name not in CAPTURE_NAME_TO_KIND:
         return (sublime.KindId.AMBIGUOUS, "?", "?")
-
     return CAPTURE_NAME_TO_KIND[name]
 
 
@@ -693,7 +696,8 @@ def goto_captures(captures: list[CaptureDict], view: sublime.View):
 
 def goto_capture_options(captures: list[CaptureDict], options: List[sublime.QuickPanelItem], view: sublime.View):
     """
-    Separate from `goto_captures` so that users can easily write their own `goto_captures`.
+    Separate from `goto_captures` so that users can easily write their own `goto_captures`, e.g. for custom rendering of
+    goto options.
     """
 
     def on_highlight(idx: int):

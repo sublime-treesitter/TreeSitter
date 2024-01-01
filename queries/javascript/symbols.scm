@@ -1,3 +1,3 @@
 ; inherits: ecma
 
-(class_declaration (identifier) @definition.class.breadcrumb.1)
+(class_declaration (identifier) @definition.class @breadcrumb.1)

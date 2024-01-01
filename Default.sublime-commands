@@ -36,12 +36,12 @@
     "command": "tree_sitter_select_descendant",
   },
   {
-    "caption": "TreeSitter: Goto Query",
-    "command": "tree_sitter_goto_query",
+    "caption": "TreeSitter: Select Symbols",
+    "command": "tree_sitter_select_symbols",
   },
   {
-    "caption": "TreeSitter: Select Query",
-    "command": "tree_sitter_select_query",
+    "caption": "TreeSitter: Goto Symbol",
+    "command": "tree_sitter_goto_symbol",
   },
   {
     "caption": "TreeSitter: Print Tree",

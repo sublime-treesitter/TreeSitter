@@ -123,7 +123,7 @@ def query_node(
     queries_path: str | Path = "",
 ):
     """
-    Query a node with a prepared query.
+    Query a node with a query file.
     """
     if not (scope := check_scope(scope)):
         return
@@ -521,6 +521,8 @@ CaptureNameType = Literal[
     "definition.function",
     "definition.call",
     "definition.block",
+    "definition.if",
+    "definition.loop",
 ]
 
 CAPTURE_NAME_TO_KIND: dict[CaptureNameType, sublime.Kind] = {
@@ -534,10 +536,12 @@ CAPTURE_NAME_TO_KIND: dict[CaptureNameType, sublime.Kind] = {
     "definition.function": (sublime.KindId.FUNCTION, "f", "f"),
     "definition.call": (sublime.KindId.COLOR_ORANGISH, "l", "l"),
     "definition.block": (sublime.KindId.COLOR_DARK, "b", "b"),
+    "definition.if": (sublime.KindId.COLOR_DARK, "i", "i"),
+    "definition.loop": (sublime.KindId.COLOR_DARK, "l", "l"),
 }
 
 
-BREADCRUMB_CAPTURE_NAME = "bc"
+BREADCRUMB_CAPTURE_NAME = "breadcrumb"
 
 
 def parse_capture_name(capture_name: str) -> Tuple[str, int | None]:
@@ -568,13 +572,14 @@ def get_captures_from_nodes(
     view: sublime.View,
     query_file: str = SYMBOLS_FILE,
     queries_path: str | Path = "",
-    handle_queries_file_not_found: bool = True,
+    handle_query_file_not_found: bool = True,
 ) -> List[CaptureDict]:
     """
     Get capture tuples from search nodes. Capture tuples include captured ancestors for rendering breadcrumbs.
 
     Raises:
-        `FileNotFoundError` if query file doesn't exist
+
+    - `FileNotFoundError` if query file doesn't exist, and `handle_query_file_not_found` is `False`
     """
 
     if not (tree_dict := get_tree_dict(view.buffer_id())):
@@ -589,7 +594,7 @@ def get_captures_from_nodes(
         try:
             query_captures = query_node(tree_dict["scope"], search_node, query_file, queries_path)
         except FileNotFoundError as e:
-            if not handle_queries_file_not_found:
+            if not handle_query_file_not_found:
                 raise
             if get_debug():
                 log("".join(traceback.format_exception(None, e, e.__traceback__)))
@@ -659,6 +664,13 @@ def format_breadcrumbs(breadcrumbs: list[Node]):
     return " > ".join(format_node_text(a.text.decode()) for a in reversed(breadcrumbs))
 
 
+def format_annotation(capture_name: str) -> str:
+    parts = capture_name.split(".")
+    if len(parts) < 2:
+        return ""
+    return parts[1].capitalize()
+
+
 def goto_captures(captures: list[CaptureDict], view: sublime.View):
     """
     Render goto options in quick panel in `view`, from list of `captures`. Captures can be gotten with
@@ -672,6 +684,7 @@ def goto_captures(captures: list[CaptureDict], view: sublime.View):
                 trigger=f"{'. ' * len(breadcrumbs)}{format_node_text(capture['node'].text.decode())}",
                 kind=get_capture_kind(capture["name"]),
                 details=format_breadcrumbs([bc["node"] for bc in breadcrumbs]),
+                annotation=format_annotation(capture["name"]),
             )
         )
 
@@ -724,7 +737,7 @@ def goto_capture_options(captures: list[CaptureDict], options: List[sublime.Quic
 
 
 #
-# Select, query and debug commands
+# Select, goto and debug commands
 #
 
 
@@ -822,11 +835,33 @@ class TreeSitterSelectDescendantCommand(sublime_plugin.TextCommand):
             scroll_to_region(new_region, self.view)
 
 
-class TreeSitterGotoQueryCommand(sublime_plugin.TextCommand):
+class TreeSitterSelectSymbolsCommand(sublime_plugin.TextCommand):
     """
-    Render goto options in current buffer from tree sitter query, run on node spanned by `region`.
+    Select symbol from current buffer captured by tree sitter query.
+    """
 
-    If query returns no captures, or query file for this language/path doesn't exist, fall back to built-in goto text
+    def run(self, edit, region: Tuple[int, int] | None = None, query_file: str = SYMBOLS_FILE, queries_path: str = ""):
+        if not (tree_dict := get_tree_dict(self.view.buffer_id())):
+            return
+
+        if captures := get_captures_from_nodes(
+            [tree_dict["tree"].root_node],
+            self.view,
+            query_file=query_file,
+            queries_path=queries_path,
+            handle_query_file_not_found=False,
+        ):
+            sel = self.view.sel()
+            sel.clear()
+            for capture in captures:
+                sel.add(get_region_from_node(capture["node"], self.view))
+
+
+class TreeSitterGotoSymbolCommand(sublime_plugin.TextCommand):
+    """
+    Render goto options for symbols in current buffer captured by tree sitter query.
+
+    If query returns no captures, or query file for this language/path doesn't exist, fall back to built-in goto
     command.
     """
 
@@ -842,33 +877,11 @@ class TreeSitterGotoQueryCommand(sublime_plugin.TextCommand):
             self.view,
             query_file=query_file,
             queries_path=queries_path,
-            handle_queries_file_not_found=True,
+            handle_query_file_not_found=True,
         ):
             return goto_captures(captures, self.view)
 
         self.fallback()
-
-
-class TreeSitterSelectQueryCommand(sublime_plugin.TextCommand):
-    """
-    Select captures from tree sitter query run on node spanned by `region`.
-    """
-
-    def run(self, edit, region: Tuple[int, int] | None = None, query_file: str = SYMBOLS_FILE, queries_path: str = ""):
-        if not (tree_dict := get_tree_dict(self.view.buffer_id())):
-            return
-
-        if captures := get_captures_from_nodes(
-            [tree_dict["tree"].root_node],
-            self.view,
-            query_file=query_file,
-            queries_path=queries_path,
-            handle_queries_file_not_found=False,
-        ):
-            sel = self.view.sel()
-            sel.clear()
-            for capture in captures:
-                sel.add(get_region_from_node(capture["node"], self.view))
 
 
 class TreeSitterPrintTreeCommand(sublime_plugin.TextCommand):

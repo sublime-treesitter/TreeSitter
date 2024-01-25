@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import traceback
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterable, List, Literal, Tuple, TypedDict, cast
 
@@ -29,6 +30,7 @@ from .utils import (
     log,
     maybe_none,
     not_none,
+    suppress,
 )
 
 if TYPE_CHECKING:
@@ -39,6 +41,9 @@ SYMBOLS_FILE = "symbols.scm"
 #
 # Public-facing API functions, and some helper functions
 #
+
+
+ignoring_file_not_found_errors: partial[str] = partial(suppress, FileNotFoundError, otherwise="")
 
 
 def get_tracked_buffer_ids():
@@ -121,7 +126,15 @@ def get_query_s_from_file(queries_path: str | Path, query_file: str, language_na
             if line.startswith(INHERITS_PREFIX):
                 languages = [lang.strip() for lang in line.split(INHERITS_PREFIX)[1].split(",") if lang]
 
-    queries = [get_query_s_from_file(queries_path, query_file=query_file, language_name=lang) for lang in languages]
+    queries = [
+        ignoring_file_not_found_errors(partial(
+                get_query_s_from_file,
+                queries_path,
+                query_file=query_file,
+                language_name=lang
+        ))
+        for lang in languages
+    ]
     return "\n".join([query_s, *queries])
 
 

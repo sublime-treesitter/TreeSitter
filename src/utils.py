@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, List, Literal, TypedDict, TypeVar, cast
+from typing import TYPE_CHECKING, Callable, Dict, List, Literal, Type, TypedDict, TypeVar, cast, overload
 
 import sublime
 
@@ -18,6 +18,7 @@ LIB_PATH = PROJECT_ROOT / "src" / "lib"
 SETTINGS_FILENAME = "TreeSitter.sublime-settings"
 
 T = TypeVar("T")
+S = TypeVar("S")
 
 
 def maybe_none(var: T) -> T | None:
@@ -27,6 +28,21 @@ def maybe_none(var: T) -> T | None:
 def not_none(var: T | None) -> T:
     assert var is not None
     return var
+
+
+@overload
+def suppress(exception: Type[BaseException], fn: Callable[[], T]) -> T | None: ...
+
+
+@overload
+def suppress(exception: Type[BaseException], fn: Callable[[], T], otherwise: S) -> T | S: ...
+
+
+def suppress(exception: Type[BaseException], fn: Callable[[], T], otherwise: S | None = None) -> T | S | None:
+    try:
+        return fn()
+    except exception:
+        return otherwise
 
 
 def log(s: str, with_print=True, with_status=False):

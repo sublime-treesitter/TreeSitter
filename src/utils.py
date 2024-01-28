@@ -81,7 +81,6 @@ ScopeType = Literal[
     "source.toml",
     "source.yaml",
     "source.json",
-    "source.json",
     "source.shell",
     "source.Kotlin",
     "source.julia",
@@ -156,12 +155,13 @@ class RepoDict(TypedDict):
 
     repo: str
     branch: NotRequired[str]
+    parser_path: NotRequired[str]
 
 
 LANGUAGE_NAME_TO_REPO: dict[str, RepoDict] = {
     "python": {"repo": "tree-sitter/tree-sitter-python"},
-    "typescript": {"repo": "tree-sitter/tree-sitter-typescript"},
-    "tsx": {"repo": "tree-sitter/tree-sitter-typescript"},
+    "typescript": {"repo": "tree-sitter/tree-sitter-typescript", "parser_path": "typescript"},
+    "tsx": {"repo": "tree-sitter/tree-sitter-typescript", "parser_path": "tsx"},
     "javascript": {"repo": "tree-sitter/tree-sitter-javascript"},
     "css": {"repo": "tree-sitter/tree-sitter-css"},
     "scss": {"repo": "serenadeai/tree-sitter-scss"},
@@ -192,15 +192,6 @@ LANGUAGE_NAME_TO_REPO: dict[str, RepoDict] = {
     "query": {"repo": "nvim-treesitter/tree-sitter-query"},
     "sql": {"repo": "DerekStride/tree-sitter-sql", "branch": "gh-pages"},
 }
-
-LANGUAGE_NAME_TO_PARSER_PATH: dict[str, str] = {}
-for name, org_and_repo in LANGUAGE_NAME_TO_REPO.items():
-    _, repo = org_and_repo["repo"].split("/")
-    LANGUAGE_NAME_TO_PARSER_PATH[name] = repo
-
-# Overrides for special Tree-sitter grammar repos in which parser.c isn't at src/parser.c
-LANGUAGE_NAME_TO_PARSER_PATH["typescript"] = str(Path("tree-sitter-typescript") / "typescript")
-LANGUAGE_NAME_TO_PARSER_PATH["tsx"] = str(Path("tree-sitter-typescript") / "tsx")
 
 
 def get_settings():
@@ -245,8 +236,17 @@ def get_language_name_to_repo():
 
 
 def get_language_name_to_parser_path():
-    settings_d = get_settings_dict().get("language_name_to_parser_path") or {}
-    return {**LANGUAGE_NAME_TO_PARSER_PATH, **settings_d}
+    language_name_to_parser_path: dict[str, str] = {}
+    language_name_to_repo = get_language_name_to_repo()
+
+    for name, repo_dict in language_name_to_repo.items():
+        _, repo = repo_dict["repo"].split("/")
+        parser_path = repo_dict.get("parser_path")
+        if parser_path:
+            language_name_to_parser_path[name] = str(Path(repo) / Path(parser_path))
+        else:
+            language_name_to_parser_path[name] = repo
+    return language_name_to_parser_path
 
 
 def get_queries_path():

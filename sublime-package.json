@@ -47,7 +47,7 @@
             },
             "python_path": {
               "type": "string",
-              "markdownDescription": "Path to Python 3.8 executable, required for building languages `.so` files"
+              "markdownDescription": "Path to Python 3.8 executable, required for building language `.so` or `.dll` files"
             },
             "pip_path": {
               "type": "string",
@@ -67,20 +67,14 @@
                   "type": "object",
                   "properties": {
                     "repo": { "type": "string" },
-                    "branch": { "type": "string" }
+                    "branch": { "type": "string" },
+                    "parser_path": { "type": "string" }
                   },
                   "additionalProperties": false,
                   "required": ["repo"]
                 }
               },
               "markdownDescription": "Override or extend lookup dict with Tree-sitter grammar repos, see [src/utils.py](https://github.com/sublime-treesitter/TreeSitter/blob/main/src/utils.py)"
-            },
-            "language_name_to_parser_path": {
-              "type": "object",
-              "patternProperties": {
-                ".*": { "type": "string" }
-              },
-              "markdownDescription": "Overrides for special Tree-sitter grammar repos in which `parser.c` isn't at `src/parser.c`, see [src/utils.py](https://github.com/sublime-treesitter/TreeSitter/blob/main/src/utils.py)"
             },
             "language_name_to_debounce_ms": {
               "type": "object",

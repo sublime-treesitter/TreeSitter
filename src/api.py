@@ -20,7 +20,16 @@ from .core import (
     publish_tree_update,
     trim_cached_trees,
 )
-from .utils import QUERIES_PATH, get_debug, get_queries_path, get_scope_to_language_name, log, maybe_none, not_none
+from .utils import (
+    PROJECT_ROOT,
+    QUERIES_PATH,
+    get_debug,
+    get_queries_path,
+    get_scope_to_language_name,
+    log,
+    maybe_none,
+    not_none,
+)
 
 if TYPE_CHECKING:
     from tree_sitter import Node, Tree
@@ -859,6 +868,12 @@ class TreeSitterSelectSymbolsCommand(sublime_plugin.TextCommand):
             sel.clear()
             for capture in captures:
                 sel.add(get_region_from_node(capture["node"], self.view))
+
+
+class TreeSitterReloadCommand(sublime_plugin.ApplicationCommand):
+    def run(self):
+        root_file = Path(PROJECT_ROOT) / "load.py"
+        root_file.touch()
 
 
 class TreeSitterGotoSymbolCommand(sublime_plugin.TextCommand):

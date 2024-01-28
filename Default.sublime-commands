@@ -55,4 +55,8 @@
     "caption": "TreeSitter: Toggle Show Node Under Selection",
     "command": "tree_sitter_toggle_show_node_under_selection",
   },
+  {
+    "caption": "TreeSitter: Reload Plugin",
+    "command": "tree_sitter_reload"
+  },
 ]

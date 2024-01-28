@@ -29,8 +29,6 @@ It has the following limitations:
     - Alternative is pre-compile and vendor .so files, e.g. `build/language-python.so`, for all platforms and languages
 - Due to how syntax highlighting works in Sublime, it can't be used for syntax highlighting
     - See e.g. https://github.com/sublimehq/sublime_text/issues/817
-- It breaks if the package is reloaded, which is a nuisance if you're working on this codebase
-    - After package is reloaded, `BUFFER_ID_TO_TREE` is no longer updated on buffer changes
 """
 
 from __future__ import annotations

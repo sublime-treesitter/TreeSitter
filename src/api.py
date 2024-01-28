@@ -754,6 +754,16 @@ def goto_capture_options(captures: list[CaptureDict], options: List[sublime.Quic
 #
 
 
+class TreeSitterReloadCommand(sublime_plugin.ApplicationCommand):
+    """
+    Reload the plugin.
+    """
+
+    def run(self):
+        root_file = Path(PROJECT_ROOT) / "load.py"
+        root_file.touch()
+
+
 class TreeSitterSelectAncestorCommand(sublime_plugin.TextCommand):
     """
     Expand selection to smallest ancestor that's bigger than node spanning currently selected region.
@@ -868,12 +878,6 @@ class TreeSitterSelectSymbolsCommand(sublime_plugin.TextCommand):
             sel.clear()
             for capture in captures:
                 sel.add(get_region_from_node(capture["node"], self.view))
-
-
-class TreeSitterReloadCommand(sublime_plugin.ApplicationCommand):
-    def run(self):
-        root_file = Path(PROJECT_ROOT) / "load.py"
-        root_file.touch()
 
 
 class TreeSitterGotoSymbolCommand(sublime_plugin.TextCommand):

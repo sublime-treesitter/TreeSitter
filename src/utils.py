@@ -241,8 +241,7 @@ def get_language_name_to_parser_path():
 
     for name, repo_dict in language_name_to_repo.items():
         _, repo = repo_dict["repo"].split("/")
-        parser_path = repo_dict.get("parser_path")
-        if parser_path:
+        if parser_path := repo_dict.get("parser_path"):
             language_name_to_parser_path[name] = str(Path(repo) / Path(parser_path))
         else:
             language_name_to_parser_path[name] = repo

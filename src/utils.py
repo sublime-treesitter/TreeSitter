@@ -48,14 +48,14 @@ def add_path(path: str):
 
 class SettingsDict(TypedDict):
     installed_languages: List[str]
-    python_path: str
-    pip_path: str
-    language_name_to_scopes: Dict[str, List[ScopeType]] | None
-    language_name_to_repo: Dict[str, RepoDict] | None
-    language_name_to_parser_path: Dict[str, str] | None
-    language_name_to_debounce_ms: Dict[str, float] | None
-    debug: bool | None
-    queries_path: str | None
+    python_path: NotRequired[str]
+    pip_path: NotRequired[str]
+    language_name_to_scopes: NotRequired[Dict[str, List[ScopeType]]]
+    language_name_to_repo: NotRequired[Dict[str, RepoDict]]
+    language_name_to_parser_path: NotRequired[Dict[str, str]]
+    language_name_to_debounce_ms: NotRequired[Dict[str, float]]
+    debug: NotRequired[bool]
+    queries_path: NotRequired[str]
 
 
 ScopeType = Literal[

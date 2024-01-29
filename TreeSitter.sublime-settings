@@ -1,10 +1,4 @@
 {
-  // Required for building language .so files
-  "python_path": "",
-
-  // Required for installing tree_sitter, inferred from python_path if left blank
-  "pip_path": "",
-
   // Run `TreeSitter: Install Language` to see supported languages
   "installed_languages": ["python", "json"]
 }

@@ -18,15 +18,18 @@ It's easy to build Tree-sitter plugins on top of this one, for "structural" edit
 folding, symbol maps… See e.g. https://zed.dev/blog/syntax-aware-editing for ideas. It's performant and doesn't block
 the main thread.
 
+This plugin ships with language binaries bundled in `tree_sitter_languages`. If users want to clone their own language
+repos and build their own binaries, they can set `python_path` to an external Python 3.8 executable. The Python that
+ships with Sublime Text is not suitable for building language binaries:
+
+- Calling `build_library` raises e.g. `ModuleNotFoundError: No module named '_sysconfigdata__darwin_darwin'`
+- This module is built dynamically, and doesn't exist in Python bundled with Sublime Text
+
 It has the following limitations:
 
 - It doesn't support nested syntax trees, e.g. JS code in `<script>` tags in HTML docs
     - Ideas on how to do this: https://www.gnu.org/software/emacs/manual/html_node/elisp/Multiple-Languages.html
 - It only supports source code encoded with ASCII / UTF-8 (Tree-sitter also supports UTF-16)
-- Due to limitations in Sublime's bundled Python, it requires an external Python 3.8 executable (see settings)
-    - Calling `build_library` raises e.g. `ModuleNotFoundError: No module named '_sysconfigdata__darwin_darwin'`
-    - This module is built dynamically, and doesn't exist in Python bundled with Sublime Text
-    - Alternative is pre-compile and vendor .so files, e.g. `build/language-python.so`, for all platforms and languages
 - Due to how syntax highlighting works in Sublime, it can't be used for syntax highlighting
     - See e.g. https://github.com/sublimehq/sublime_text/issues/817
 """
@@ -98,14 +101,10 @@ def on_load():
     We load any uncloned or unbuilt languages in the background, and if a language needed to parse the active view was
     just installed, we parse this view when we're finished.
     """
-    log(f'language repos and .so files installed at "{BUILD_PATH}"')
-
-    settings_dict = get_settings_dict()
-
-    python_path = settings_dict["python_path"]
-    if not python_path:
-        log("ERROR, `python_path` must be set")
-        return
+    if not get_settings_dict().get("python_path"):
+        log("`python_path` not set, using language binaries bundled with tree_sitter_languages")
+    else:
+        log(f'`python_path` set, language repos and .so files installed at "{BUILD_PATH}"')
 
     instantiate_languages()
     Thread(target=install_languages).start()
@@ -130,8 +129,15 @@ def get_so_file(language_name: str):
 def clone_languages():
     """
     Clone language repos from which language `.so` files can be built.
+
+    This function is NOOP if `python_path` not set.
     """
-    language_names = get_settings_dict()["installed_languages"]
+    settings_dict = get_settings_dict()
+    if not settings_dict.get("python_path"):
+        # Rely instead on language binaries bundled with tree_sitter_languages
+        return
+
+    language_names = settings_dict["installed_languages"]
     files = set(f for f in os.listdir(BUILD_PATH))
     language_name_to_repo = get_language_name_to_repo()
 
@@ -157,16 +163,20 @@ def clone_languages():
 
 def build_languages():
     """
-    Build missing language `.so` files for installed languages. We use python 3.8 executable to build languages,
-    because the python bundled with Sublime can't do this.
+    Build missing language `.so` files for installed languages. We use python 3.8 executable to build languages, because
+    the python bundled with Sublime can't do this.
 
-    Note: `installed_languages` specified in `TreeSitter.sublime-settings`, `python` installed by default.
+    This function is NOOP if `python_path` not set, in which case we rely on bundled `tree_sitter_languages`.
+
+    Note: `installed_languages` specified in `TreeSitter.sublime-settings`, `python` and `json` installed by default.
     """
     settings_dict = get_settings_dict()
     language_names = settings_dict["installed_languages"]
-    python_path = settings_dict["python_path"]
+    if not (python_path := settings_dict.get("python_path")):
+        # Rely instead on language binaries bundled with tree_sitter_languages
+        return
 
-    pip_path = settings_dict["pip_path"]
+    pip_path = settings_dict.get("pip_path")
     if not pip_path:
         head, _ = os.path.split(python_path)
         pip_path = str(Path(head) / "pip")
@@ -198,12 +208,15 @@ def build_languages():
 
 def instantiate_languages():
     """
-    Instantiate `Language`s for language `.so` files, and put them in `SCOPE_TO_LANGUAGE`. This takes about 0.1ms for 2
+    Instantiate `Language`s from language binaries, and put them in `SCOPE_TO_LANGUAGE`. This takes about 0.1ms for 2
     languages on my machine.
     """
     from tree_sitter import Language
+    from tree_sitter_languages import get_language
 
-    language_names = get_settings_dict()["installed_languages"]
+    settings_dict = get_settings_dict()
+    python_path = settings_dict.get("python_path")
+    language_names = settings_dict["installed_languages"]
     files = set(f for f in os.listdir(BUILD_PATH))
     language_name_to_scopes = get_language_name_to_scopes()
 
@@ -211,14 +224,22 @@ def instantiate_languages():
         if name not in language_name_to_scopes:
             continue
 
-        if (so_file := get_so_file(name)) not in files:
-            continue
-
         # We've already instantiated this language, no need to do it again
         if all(scope in SCOPE_TO_LANGUAGE for scope in language_name_to_scopes[name]):
             continue
 
-        language = Language(str(BUILD_PATH / so_file), name)
+        language: Language | None = None
+        if python_path:
+            if (so_file := get_so_file(name)) not in files:
+                continue
+
+            language = Language(str(BUILD_PATH / so_file), name)
+        else:
+            try:
+                language = get_language(name)
+            except Exception:
+                log(f"language `{name}` not bundled with `tree_sitter_languages`")
+                continue
 
         for scope in language_name_to_scopes[name]:
             SCOPE_TO_LANGUAGE[scope] = language
@@ -631,19 +652,20 @@ def remove_language(language: str):
     - Remove language repo and .so file from disk
     - Remove `Language` instance from `SCOPE_TO_LANGUAGE`
     """
-    repo_dict = get_language_name_to_repo().get(language)
-    if repo_dict:
-        _, repo = repo_dict["repo"].split("/")
-        try:
-            rmtree(BUILD_PATH / repo)
-        except Exception as e:
-            log(f"error removing {repo} for {language}: {e}")
+    if get_settings_dict().get("python_path"):
+        repo_dict = get_language_name_to_repo().get(language)
+        if repo_dict:
+            _, repo = repo_dict["repo"].split("/")
+            try:
+                rmtree(BUILD_PATH / repo)
+            except Exception as e:
+                log(f"error removing {repo} for {language}: {e}")
 
-    so_file = get_so_file(language)
-    try:
-        os.remove(BUILD_PATH / so_file)
-    except Exception as e:
-        log(f"error removing {so_file} for {language}: {e}")
+        so_file = get_so_file(language)
+        try:
+            os.remove(BUILD_PATH / so_file)
+        except Exception as e:
+            log(f"error removing {so_file} for {language}: {e}")
 
     for scope in get_language_name_to_scopes().get(language, []):
         SCOPE_TO_LANGUAGE.pop(scope, None)

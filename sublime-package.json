@@ -47,11 +47,11 @@
             },
             "python_path": {
               "type": "string",
-              "markdownDescription": "Path to Python 3.8 executable, required for building language `.so` or `.dll` files"
+              "markdownDescription": "Path to Python 3.8 executable; set this to clone your own language repos and build your own language binaries instead of relying on those bundled with `tree_sitter_languages`"
             },
             "pip_path": {
               "type": "string",
-              "markdownDescription": "Required for installing `tree_sitter` bindings, inferred from `python_path` if left blank"
+              "markdownDescription": "If `python_path` is set, set this to corresponding path for `pip`; inferred from `python_path` if left blank"
             },
             "language_name_to_scopes": {
               "type": "object",
@@ -93,7 +93,7 @@
             }
           },
           "additionalProperties": false,
-          "required": ["python_path"]
+          "required": ["installed_languages"]
         }
       }
     ]

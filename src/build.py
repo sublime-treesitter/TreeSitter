@@ -1,20 +1,25 @@
 """
 This can be called with a system python (not Sublime's python) in a subprocess to build .so files.
 """
+import subprocess
 import sys
-from pathlib import Path
+from importlib.metadata import PackageNotFoundError, version
 
-# Some import issue prevents us from doing `from .utils import DEPS_PATH, add_path`
-PROJECT_ROOT = Path(__file__).parent.parent
-DEPS_PATH = str(PROJECT_ROOT / "deps")
+pip_path = sys.argv[1]
+language_source_path = sys.argv[2]
+language_file_path = sys.argv[3]
 
-if DEPS_PATH not in sys.path:
-    sys.path.insert(0, DEPS_PATH)
+TREE_SITTER_BINDINGS_VERSION = "0.20.4"
+
+try:
+    v = version("tree_sitter")
+except PackageNotFoundError:
+    v = ""
+if v != TREE_SITTER_BINDINGS_VERSION:
+    # Bindings non installed/correct version not installed; call with `check=True` to block until subprocess completes
+    subprocess.run([pip_path, "install", f"tree_sitter=={TREE_SITTER_BINDINGS_VERSION}"], check=True)
 
 from tree_sitter import Language  # noqa: E402
-
-language_source_path = sys.argv[1]
-language_file_path = sys.argv[2]
 
 Language.build_library(
     # Create shared object / dynamically linked library at language_file_path

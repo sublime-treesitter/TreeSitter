@@ -1,0 +1,8 @@
+{
+  "*": {
+    ">=4000": [
+      "tree_sitter",
+      "tree_sitter_languages"
+    ]
+  }
+}

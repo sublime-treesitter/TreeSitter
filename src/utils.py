@@ -10,7 +10,6 @@ if TYPE_CHECKING:
     from typing_extensions import NotRequired
 
 PROJECT_ROOT = Path(__file__).parent.parent
-DEPS_PATH = PROJECT_ROOT / "deps"
 BUILD_PATH = PROJECT_ROOT / "build"
 QUERIES_PATH = PROJECT_ROOT / "queries"
 LIB_PATH = PROJECT_ROOT / "src" / "lib"

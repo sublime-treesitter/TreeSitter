@@ -1,7 +1,4 @@
 pyrightconfig.json
 
-deps/*
-!deps/.gitignore
-
 build/*
 !build/.gitignore

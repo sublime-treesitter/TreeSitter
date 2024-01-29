@@ -36,7 +36,6 @@ from __future__ import annotations
 import os
 import subprocess
 import time
-from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from shutil import rmtree
 from threading import Thread
@@ -48,7 +47,6 @@ from sublime import View
 
 from .utils import (
     BUILD_PATH,
-    DEPS_PATH,
     LIB_PATH,
     PROJECT_ROOT,
     SETTINGS_FILENAME,
@@ -68,7 +66,6 @@ from .utils import (
 if TYPE_CHECKING:
     from tree_sitter import Language, Parser, Tree
 
-TREE_SITTER_BINDINGS_VERSION = "0.20.4"
 PROJECT_REPO = "https://github.com/sublime-treesitter/TreeSitter"
 
 MAX_CACHED_TREES = 16
@@ -79,7 +76,6 @@ BUFFER_ID_TO_TREE: dict[int, TreeDict] = {}
 
 # These need to be added to plugin host's `sys.path` before other plugins that depend on them load
 add_path(str(LIB_PATH))
-add_path(str(DEPS_PATH))
 
 
 class TreeDict(TypedDict):
@@ -102,7 +98,6 @@ def on_load():
     We load any uncloned or unbuilt languages in the background, and if a language needed to parse the active view was
     just installed, we parse this view when we're finished.
     """
-    log(f'Python bindings installed at "{DEPS_PATH}"')
     log(f'language repos and .so files installed at "{BUILD_PATH}"')
 
     settings_dict = get_settings_dict()
@@ -112,40 +107,8 @@ def on_load():
         log("ERROR, `python_path` must be set")
         return
 
-    pip_path = settings_dict["pip_path"]
-    if not pip_path:
-        head, _ = os.path.split(python_path)
-        pip_path = str(Path(head) / "pip")
-
-    install_tree_sitter(os.path.expanduser(pip_path))
     instantiate_languages()
     Thread(target=install_languages).start()
-
-
-def install_tree_sitter(pip_path: str):
-    """
-    We use pip 3.8 executable to install tree_sitter wheel. Call with `check=True` to block until subprocess completes.
-    """
-    try:
-        v = version("tree_sitter")
-    except PackageNotFoundError:
-        v = ""
-
-    if v != TREE_SITTER_BINDINGS_VERSION:
-        # Bindings either not installed, or correct version not installed
-        for f in os.listdir(DEPS_PATH):
-            # Remove old version before installing new version
-            if f.startswith("tree_sitter"):
-                try:
-                    rmtree(DEPS_PATH / f)
-                except Exception as e:
-                    log(f"error removing {f} from {DEPS_PATH}: {e}")
-
-        log(f"installing tree_sitter=={TREE_SITTER_BINDINGS_VERSION}")
-        subprocess.run(
-            [pip_path, "install", "--target", str(DEPS_PATH), f"tree_sitter=={TREE_SITTER_BINDINGS_VERSION}"],
-            check=True,
-        )
 
 
 def clone_language(org_and_repo: str, branch: str = ""):
@@ -203,6 +166,11 @@ def build_languages():
     language_names = settings_dict["installed_languages"]
     python_path = settings_dict["python_path"]
 
+    pip_path = settings_dict["pip_path"]
+    if not pip_path:
+        head, _ = os.path.split(python_path)
+        pip_path = str(Path(head) / "pip")
+
     files = set(f for f in os.listdir(BUILD_PATH))
     language_name_to_parser_path = get_language_name_to_parser_path()
 
@@ -220,6 +188,7 @@ def build_languages():
             [
                 os.path.expanduser(python_path),
                 str(PROJECT_ROOT / "src" / "build.py"),
+                os.path.expanduser(pip_path),
                 str(BUILD_PATH / path),
                 str(BUILD_PATH / so_file),
             ],

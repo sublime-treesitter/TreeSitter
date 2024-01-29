@@ -42,7 +42,7 @@ import time
 from pathlib import Path
 from shutil import rmtree
 from threading import Thread
-from typing import TYPE_CHECKING, TypedDict
+from typing import TYPE_CHECKING, TypedDict, cast
 
 import sublime
 import sublime_plugin
@@ -54,6 +54,7 @@ from .utils import (
     PROJECT_ROOT,
     SETTINGS_FILENAME,
     ScopeType,
+    SettingsDict,
     add_path,
     get_debug,
     get_language_name_to_debounce_ms,
@@ -88,9 +89,29 @@ class TreeDict(TypedDict):
     updated_s: float
 
 
+class MutableSettings(TypedDict):
+    settings: SettingsDict | None
+
+
 #
 # Code for installing tree sitter, and installing/building languages
 #
+
+mutable_settings = MutableSettings(settings=None)
+
+
+def on_update_python_path():
+    """
+    Reinstantiate langauges in case `python_path` setting updated.
+
+    If there's an easier way to check whether plugin settings have changed I'd love to know what it is!
+    """
+    settings_dict = get_settings_dict()
+    if previous_settings_dict := mutable_settings["settings"]:
+        if previous_settings_dict.get("python_path") != settings_dict.get("python_path"):
+            instantiate_languages()
+            Thread(target=install_languages).start()
+    mutable_settings["settings"] = settings_dict
 
 
 def on_load():
@@ -101,6 +122,11 @@ def on_load():
     We load any uncloned or unbuilt languages in the background, and if a language needed to parse the active view was
     just installed, we parse this view when we're finished.
     """
+    settings = get_settings()
+    mutable_settings["settings"] = get_settings_dict(settings)
+    settings.clear_on_change("TreeSitter")
+    settings.add_on_change("TreeSitter", on_update_python_path)
+
     if not get_settings_dict().get("python_path"):
         log("`python_path` not set, using language binaries bundled with tree_sitter_languages")
     else:
@@ -236,7 +262,7 @@ def instantiate_languages():
             language = Language(str(BUILD_PATH / so_file), name)
         else:
             try:
-                language = get_language(name)
+                language = cast(Language, get_language(name))
             except Exception:
                 log(f"language `{name}` not bundled with `tree_sitter_languages`")
                 continue

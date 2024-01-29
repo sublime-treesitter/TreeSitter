@@ -1,6 +1,6 @@
 # Sublime TreeSitter
 
-The `TreeSitter` plugin provides Sublime Text plugins with a performant and flexible interface to [Tree-sitter](https://tree-sitter.github.io/tree-sitter/).
+The `TreeSitter` plugin provides Sublime Text with a performant and flexible interface to [Tree-sitter](https://tree-sitter.github.io/tree-sitter/).
 
 ## Why Tree-sitter
 

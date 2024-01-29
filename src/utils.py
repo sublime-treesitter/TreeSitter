@@ -206,8 +206,8 @@ def get_debug():
     return get_settings_dict().get("debug") or False
 
 
-def get_settings_dict():
-    return cast(SettingsDict, get_settings().to_dict())
+def get_settings_dict(settings: sublime.Settings | None = None):
+    return cast(SettingsDict, (settings or get_settings()).to_dict())
 
 
 def get_language_name_to_scopes():

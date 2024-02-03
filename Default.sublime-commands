@@ -1,6 +1,6 @@
 [
   {
-    "caption": "TreeSitter: Settings",
+    "caption": "Preferences: TreeSitter Settings",
     "command": "edit_settings",
     "args": {
       "base_file": "${packages}/TreeSitter/TreeSitter.sublime-settings",

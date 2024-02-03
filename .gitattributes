@@ -1,0 +1,9 @@
+# git
+.github/                export-ignore
+.gitattributes          export-ignore
+.gitignore              export-ignore
+
+# unittests
+pre-push                export-ignore
+pyrightconfig-ci.json   export-ignore
+ruff.toml               export-ignore

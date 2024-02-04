@@ -817,7 +817,13 @@ class TreeSitterSelectSiblingCommand(sublime_plugin.TextCommand):
         sel = self.view.sel()
         new_regions: list[sublime.Region] = []
 
-        for region in sel:
+        if extend:
+            # Perf optimization for extending selection, no need to get_sibling for all selected regions
+            regions = [sel[-1] if forward else sel[0]]
+        else:
+            regions = sel
+
+        for region in regions:
             if sibling := get_sibling(region, self.view, forward):
                 new_region = get_region_from_node(sibling, self.view, reverse=reverse_sel)
                 new_regions.append(new_region)
@@ -847,7 +853,13 @@ class TreeSitterSelectCousinsCommand(sublime_plugin.TextCommand):
         sel = self.view.sel()
         new_regions: list[sublime.Region] = []
 
-        for region in sel:
+        if extend:
+            # Perf optimization for extending selection, no need to get_cousins for all selected regions
+            regions = [sel[-1] if which == "next" else sel[0]]
+        else:
+            regions = sel
+
+        for region in regions:
             for cousin in get_cousins(region, self.view, same_types=same_types, same_text=same_text, which=which):
                 new_region = get_region_from_node(cousin, self.view, reverse=reverse_sel)
                 new_regions.append(new_region)

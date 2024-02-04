@@ -28,8 +28,8 @@ And APIs to:
 ## Installation
 
 - Install `TreeSitter` from Package Control
-- Install new languages with `TreeSitter: Install Language`
-    - `python` and `json` installed by default
+- See installed languages / install a new language with `TreeSitter: Install Language`
+    - Only `python` and `json` installed by default
 
 ## Usage
 

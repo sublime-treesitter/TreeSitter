@@ -4,7 +4,7 @@
     "command": "edit_settings",
     "args": {
       "base_file": "${packages}/TreeSitter/TreeSitter.sublime-settings",
-      "default": "{\n  \"python_path\": \"$0\"\n}\n"
+      "default": "{\n  $0\n}\n"
     }
   },
   {

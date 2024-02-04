@@ -1,4 +1,4 @@
 {
-  // Run `TreeSitter: Install Language` to see supported languages
+  // Run `TreeSitter: Install Language` to install languages
   "installed_languages": ["python", "json"]
 }

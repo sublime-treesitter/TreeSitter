@@ -43,7 +43,7 @@
                   "sql",
                 ]
               },
-              "markdownDescription": "Run `TreeSitter: Install Language` to see supported languages"
+              "markdownDescription": "Run `TreeSitter: Install Language` to install languages"
             },
             "python_path": {
               "type": "string",

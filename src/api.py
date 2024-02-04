@@ -105,23 +105,44 @@ def query_node_with_s(scope: str | None, query_s: str, node: Node):
     return query.captures(node)
 
 
-def get_query_s_from_file(queries_path: str | Path, query_file: str, language_name: str) -> str:
+def get_query_s_from_file(
+    queries_path: str | Path,
+    query_file: str,
+    language_name: str,
+    ignore_file_not_found: bool = False,
+) -> str:
     """
     Handle `inherits` "pragmas" of the following structure: `; inherits: lang(,other_lang)`
+
+    Passing `ignore_file_not_found=True` to recursive calls of this function essentially makes inherits pragma
+    not "strict". See https://github.com/sublime-treesitter/TreeSitter/pull/6 for more context.
     """
     INHERITS_PREFIX = "; inherits:"
     path = Path(queries_path) / language_name / query_file
 
-    with open(path, "r") as f:
-        query_s = f.read()
-
     languages: list[str] = []
-    with open(path, "r") as f:
-        for line in f:
+    try:
+        with open(path, "r") as f:
+            query_s = f.read()
+    except FileNotFoundError:
+        if not ignore_file_not_found:
+            raise
+        log(f"query file not found, so it was ignored:\n{path}")
+        query_s = ""
+    else:
+        for line in query_s.splitlines():
             if line.startswith(INHERITS_PREFIX):
                 languages = [lang.strip() for lang in line.split(INHERITS_PREFIX)[1].split(",") if lang]
 
-    queries = [get_query_s_from_file(queries_path, query_file=query_file, language_name=lang) for lang in languages]
+    queries = [
+        get_query_s_from_file(
+            queries_path,
+            query_file=query_file,
+            language_name=lang,
+            ignore_file_not_found=True,
+        )
+        for lang in languages
+    ]
     return "\n".join([query_s, *queries])
 
 

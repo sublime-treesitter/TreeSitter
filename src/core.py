@@ -50,8 +50,7 @@ from sublime import View
 
 from .utils import (
     BUILD_PATH,
-    BUILD_PY_SOURCE_PATH,
-    BUILD_PY_TARGET_PATH,
+    BUILD_PY_PATH,
     LIB_PATH,
     SETTINGS_FILENAME,
     ScopeType,
@@ -128,11 +127,6 @@ def on_load():
         os.makedirs(BUILD_PATH)
     except FileExistsError:
         pass
-
-    with open(BUILD_PY_SOURCE_PATH, "r") as f:
-        s = f.read()
-    with open(BUILD_PY_TARGET_PATH, "w") as f:
-        f.write(s)
 
     settings = get_settings()
     mutable_settings["settings"] = get_settings_dict(settings)
@@ -235,7 +229,7 @@ def build_languages():
         subprocess.run(
             [
                 os.path.expanduser(python_path),
-                str(BUILD_PY_TARGET_PATH),
+                str(BUILD_PY_PATH),
                 os.path.expanduser(pip_path),
                 str(BUILD_PATH / path),
                 str(BUILD_PATH / so_file),

@@ -50,8 +50,9 @@ from sublime import View
 
 from .utils import (
     BUILD_PATH,
+    BUILD_PY_SOURCE_PATH,
+    BUILD_PY_TARGET_PATH,
     LIB_PATH,
-    PROJECT_ROOT,
     SETTINGS_FILENAME,
     ScopeType,
     SettingsDict,
@@ -116,12 +117,23 @@ def on_update_python_path():
 
 def on_load():
     """
-    Calling in `pluging_loaded` in `load.py`. Called after plugin is loaded (we can use functions like
+    Called in `plugin_loaded` in `load.py`. Called after plugin is loaded (we can use functions like
     `sublime.load_settings`), but before events fired.
 
     We load any uncloned or unbuilt languages in the background, and if a language needed to parse the active view was
     just installed, we parse this view when we're finished.
     """
+    try:
+        # Ensure "build path" exists for users managing their own languages
+        os.makedirs(BUILD_PATH)
+    except FileExistsError:
+        pass
+
+    with open(BUILD_PY_SOURCE_PATH, "r") as f:
+        s = f.read()
+    with open(BUILD_PY_TARGET_PATH, "w") as f:
+        f.write(s)
+
     settings = get_settings()
     mutable_settings["settings"] = get_settings_dict(settings)
     settings.clear_on_change("TreeSitter")
@@ -223,7 +235,7 @@ def build_languages():
         subprocess.run(
             [
                 os.path.expanduser(python_path),
-                str(PROJECT_ROOT / "src" / "build.py"),
+                str(BUILD_PY_TARGET_PATH),
                 os.path.expanduser(pip_path),
                 str(BUILD_PATH / path),
                 str(BUILD_PATH / so_file),
@@ -243,7 +255,6 @@ def instantiate_languages():
     settings_dict = get_settings_dict()
     python_path = settings_dict.get("python_path")
     language_names = settings_dict["installed_languages"]
-    files = set(f for f in os.listdir(BUILD_PATH))
     language_name_to_scopes = get_language_name_to_scopes()
 
     for name in set(language_names):
@@ -256,6 +267,7 @@ def instantiate_languages():
 
         language: Language | None = None
         if python_path:
+            files = set(f for f in os.listdir(BUILD_PATH))
             if (so_file := get_so_file(name)) not in files:
                 continue
 

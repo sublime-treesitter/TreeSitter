@@ -1,4 +1,1 @@
 pyrightconfig.json
-
-build/*
-!build/.gitignore

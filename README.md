@@ -92,6 +92,8 @@ class MyTreeSitterListener(sublime_plugin.EventListener):
 
 To enable this (and disable languages bundled in `tree_sitter_languages`), go to `TreeSitter: Settings` from the command palette, and set `python_path` to an external Python 3.8 executable with a working C compiler, so it can call [`Language.build_library`](https://github.com/tree-sitter/py-tree-sitter/blob/565f1654d1849e966c77326e11e65ba6ef530feb/tree_sitter/__init__.py#L63).
 
+If you use Linux or MacOS, an easy way to get Python 3.8 [is with pyenv](https://github.com/pyenv/pyenv).
+
 ## Limitations
 
 - Doesn't support nested syntax trees, e.g. JS code in `<script>` tags in HTML docs

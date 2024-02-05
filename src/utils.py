@@ -10,7 +10,9 @@ if TYPE_CHECKING:
     from typing_extensions import NotRequired
 
 PROJECT_ROOT = Path(__file__).parent.parent
-BUILD_PATH = PROJECT_ROOT / "build"
+BUILD_PATH = Path(sublime.cache_path()) / "TreeSitter"
+BUILD_PY_SOURCE_PATH = PROJECT_ROOT / "src" / "build.py"
+BUILD_PY_TARGET_PATH = BUILD_PATH / "build.py"
 QUERIES_PATH = PROJECT_ROOT / "queries"
 LIB_PATH = PROJECT_ROOT / "src" / "lib"
 

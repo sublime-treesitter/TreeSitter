@@ -41,6 +41,17 @@
                   "html",
                   "markdown",
                   "sql",
+                  "ocaml",
+                  "elm",
+                  "r",
+                  "dockerfile",
+                  "erlang",
+                  "objc",
+                  "perl",
+                  "regex",
+                  "make",
+                  "rst",
+                  "latex"
                 ]
               },
               "markdownDescription": "Run `TreeSitter: Install Language` to install languages"

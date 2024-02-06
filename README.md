@@ -29,7 +29,7 @@ And APIs to:
 
 - Install `TreeSitter` from Package Control
 - See installed languages / install a new language with `TreeSitter: Install Language`
-    - Only `python` and `json` installed by default
+    - `python`, `json`, `javascript`, `typescript` and a few others are installed by default
 
 ## Usage
 

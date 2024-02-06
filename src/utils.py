@@ -94,6 +94,17 @@ ScopeType = Literal[
     "text.html.basic",
     "text.html.markdown",
     "text.xml",
+    "source.erlang",
+    "source.makefile",
+    "source.dockerfile",
+    "source.elm",
+    "source.perl",
+    "source.objc",
+    "source.r",
+    "text.restructuredtext",
+    "source.ocaml",
+    "source.regexp",
+    "text.tex.latex",
 ]
 
 LANGUAGE_NAME_TO_SCOPES: Dict[str, List[ScopeType]] = {
@@ -135,6 +146,17 @@ LANGUAGE_NAME_TO_SCOPES: Dict[str, List[ScopeType]] = {
         "text.xml",
     ],
     "markdown": ["text.html.markdown"],
+    "erlang": ["source.erlang"],
+    "make": ["source.makefile"],
+    "dockerfile": ["source.dockerfile"],
+    "elm": ["source.elm"],
+    "perl": ["source.perl"],
+    "objc": ["source.objc"],
+    "r": ["source.r"],
+    "rst": ["text.restructuredtext"],
+    "ocaml": ["source.ocaml"],
+    "regex": ["source.regexp"],
+    "latex": ["text.tex.latex"],
 }
 
 """
@@ -191,6 +213,17 @@ LANGUAGE_NAME_TO_REPO: dict[str, RepoDict] = {
     "elixir": {"repo": "elixir-lang/tree-sitter-elixir"},
     "query": {"repo": "nvim-treesitter/tree-sitter-query"},
     "sql": {"repo": "DerekStride/tree-sitter-sql", "branch": "gh-pages"},
+    "ocaml": {"repo": "tree-sitter/tree-sitter-ocaml", "parser_path": "ocaml"},
+    "elm": {"repo": "elm-tooling/tree-sitter-elm"},
+    "r": {"repo": "r-lib/tree-sitter-r"},
+    "dockerfile": {"repo": "camdencheek/tree-sitter-dockerfile"},
+    "erlang": {"repo": "WhatsApp/tree-sitter-erlang"},
+    "objc": {"repo": "jiyee/tree-sitter-objc"},
+    "perl": {"repo": "ganezdragon/tree-sitter-perl"},
+    "regex": {"repo": "tree-sitter/tree-sitter-regex"},
+    "make": {"repo": "alemuller/tree-sitter-make"},
+    "rst": {"repo": "stsewd/tree-sitter-rst"},
+    "latex": {"repo": "latex-lsp/tree-sitter-latex"},
 }
 
 

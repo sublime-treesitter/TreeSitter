@@ -203,10 +203,11 @@ def build_languages():
     Note: `installed_languages` specified in `TreeSitter.sublime-settings`, `python` and `json` installed by default.
     """
     settings_dict = get_settings_dict()
-    language_names = settings_dict["installed_languages"]
     if not (python_path := settings_dict.get("python_path")):
         # Rely instead on language binaries bundled with tree_sitter_languages
         return
+
+    language_names = settings_dict["installed_languages"]
 
     pip_path = settings_dict.get("pip_path")
     if not pip_path:

@@ -51,7 +51,10 @@
                   "regex",
                   "make",
                   "rst",
-                  "latex"
+                  "latex",
+                  "hcl",
+                  "terraform",
+                  "hack"
                 ]
               },
               "markdownDescription": "Run `TreeSitter: Install Language` to install languages"

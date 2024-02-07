@@ -105,6 +105,9 @@ ScopeType = Literal[
     "source.ocaml",
     "source.regexp",
     "text.tex.latex",
+    "source.hcl",
+    "source.terraform",
+    "source.hack",
 ]
 
 LANGUAGE_NAME_TO_SCOPES: Dict[str, List[ScopeType]] = {
@@ -157,6 +160,9 @@ LANGUAGE_NAME_TO_SCOPES: Dict[str, List[ScopeType]] = {
     "ocaml": ["source.ocaml"],
     "regex": ["source.regexp"],
     "latex": ["text.tex.latex"],
+    "hcl": ["source.hcl"],
+    "terraform": ["source.terraform"],
+    "hack": ["source.hack"],
 }
 
 """
@@ -224,6 +230,9 @@ LANGUAGE_NAME_TO_REPO: dict[str, RepoDict] = {
     "make": {"repo": "alemuller/tree-sitter-make"},
     "rst": {"repo": "stsewd/tree-sitter-rst"},
     "latex": {"repo": "latex-lsp/tree-sitter-latex"},
+    "hcl": {"repo": "MichaHoffmann/tree-sitter-hcl"},
+    "terraform": {"repo": "MichaHoffmann/tree-sitter-hcl", "parser_path": "dialects/terraform"},
+    "hack": {"repo": "slackhq/tree-sitter-hack"},
 }
 
 

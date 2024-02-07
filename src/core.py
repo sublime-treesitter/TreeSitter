@@ -271,7 +271,7 @@ def instantiate_languages():
             try:
                 language = cast(Language, get_language(name))
             except Exception:
-                log(f"language `{name}` not bundled with `tree_sitter_languages`")
+                log(f"language `{name}` not bundled with `tree_sitter_languages`, see `python_path` setting in README")
                 continue
 
         for scope in language_name_to_scopes[name]:

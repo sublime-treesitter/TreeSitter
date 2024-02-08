@@ -4,16 +4,22 @@ The `TreeSitter` plugin provides Sublime Text with a performant and flexible int
 
 ## Why Tree-sitter
 
-Tree-sitter builds a parse tree for text in any buffer, fast enough to update the tree after every keystroke. The `TreeSitter` plugin has built-in commands for managing and debugging Tree-sitter languages and parse trees, and for syntax-based selection and navigation.
+Tree-sitter builds a parse tree for text in any buffer, fast enough to update the tree after every keystroke. The `TreeSitter` plugin has built-in commands for syntax-based selection and navigation, and for managing and debugging Tree-sitter languages and parse trees.
 
 It also has APIs with everything you need to build Sublime Text plugins for "structural" editing, selection, navigation, code folding, symbol maps… See e.g. https://zed.dev/blog/syntax-aware-editing for ideas.
+
+## Installation
+
+- Install `TreeSitter` from Package Control
+- See installed languages / install a new language with `TreeSitter: Install Language`
+    - `python`, `json`, `javascript`, `typescript` and a few others are installed by default
 
 ## Overview
 
 Sublime `TreeSitter` provides commands to:
 
 - Select ancestor, descendant, sibling, or "cousin" nodes based on the current selection
-- Goto symbols [returned by tree queries](./queries)
+- Goto symbols [returned by tree queries](./queries), with symbol breadcrumbs for context
 - Print the syntax tree or nodes under the current selection (e.g. for debugging)
 
 And APIs to:
@@ -24,12 +30,6 @@ And APIs to:
 - Get a tree from a string of code
 - Query a tree, walk a tree
 - Other low-level APIs that power built-in commands
-
-## Installation
-
-- Install `TreeSitter` from Package Control
-- See installed languages / install a new language with `TreeSitter: Install Language`
-    - `python`, `json`, `javascript`, `typescript` and a few others are installed by default
 
 ## Usage
 

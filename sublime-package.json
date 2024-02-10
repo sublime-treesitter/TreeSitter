@@ -107,7 +107,7 @@
             }
           },
           "additionalProperties": false,
-          "required": ["installed_languages"]
+          "required": []
         }
       }
     ]

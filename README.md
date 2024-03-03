@@ -46,7 +46,9 @@ Here's a partial list of commands that ship with `TreeSitter`. To see them all, 
 - `tree_sitter_print_tree`
 - `tree_sitter_show_node_under_selection`
 
-And here are some [example key bindings](https://github.com/kylebebak/sublime_text_config/blob/aa2af3aadef035318009299504c161ba6d125f16/Default%20(OSX).sublime-keymap#L384-L577) for selection and navigation commands.
+### Key bindings
+
+Here are some [example key bindings](https://github.com/kylebebak/sublime_text_config/blob/aa2af3aadef035318009299504c161ba6d125f16/Default%20(OSX).sublime-keymap#L384-L577) for selection and navigation commands.
 
 ### Public APIs
 
@@ -59,7 +61,7 @@ API source code is mostly in [`src/api.py`](./src/api.py).
 To import `sublime_tree_sitter` in your plugin, you have 2 options:
 
 - Name your plugin so it comes after `TreeSitter` in alphabetical order (all `User` plugins do this)
-- Or, import `sublime_tree_sitter` after your plugin has loaded, e.g. do something like this:
+- Import `sublime_tree_sitter` at "run time" after plugins have loaded, e.g. do something like this:
 
 ```py
 import sublime_plugin

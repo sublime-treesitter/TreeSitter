@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, List, Literal, TypedDict, TypeVar, cast
+from typing import TYPE_CHECKING, Literal, TypedDict, TypeVar, cast
 
 import sublime
 
@@ -48,13 +48,13 @@ def add_path(path: str):
 
 
 class SettingsDict(TypedDict):
-    installed_languages: List[str]
+    installed_languages: list[str]
     python_path: NotRequired[str]
     pip_path: NotRequired[str]
-    language_name_to_scopes: NotRequired[Dict[str, List[ScopeType]]]
-    language_name_to_repo: NotRequired[Dict[str, RepoDict]]
-    language_name_to_parser_path: NotRequired[Dict[str, str]]
-    language_name_to_debounce_ms: NotRequired[Dict[str, float]]
+    language_name_to_scopes: NotRequired[dict[str, list[ScopeType]]]
+    language_name_to_repo: NotRequired[dict[str, RepoDict]]
+    language_name_to_parser_path: NotRequired[dict[str, str]]
+    language_name_to_debounce_ms: NotRequired[dict[str, float]]
     debug: NotRequired[bool]
     queries_path: NotRequired[str]
 
@@ -110,7 +110,7 @@ ScopeType = Literal[
     "source.hack",
 ]
 
-LANGUAGE_NAME_TO_SCOPES: Dict[str, List[ScopeType]] = {
+LANGUAGE_NAME_TO_SCOPES: dict[str, list[ScopeType]] = {
     "python": ["source.python"],
     "typescript": ["source.ts"],
     "tsx": ["source.tsx"],

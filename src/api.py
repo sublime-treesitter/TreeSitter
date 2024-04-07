@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import traceback
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Iterable, List, Literal, Tuple, TypedDict, cast
+from typing import TYPE_CHECKING, Any, Iterable, Literal, TypedDict, cast
 
 import sublime
 import sublime_plugin
@@ -592,7 +592,7 @@ class BreadcrumbDict(TypedDict):
 class CaptureDict(TypedDict):
     node: Node
     name: str
-    breadcrumbs: List[BreadcrumbDict]
+    breadcrumbs: list[BreadcrumbDict]
     search_node: Node
     breadcrumb: BreadcrumbDict | None
 
@@ -603,7 +603,7 @@ def get_captures_from_nodes(
     query_file: str = SYMBOLS_FILE,
     queries_path: str | Path = "",
     handle_query_file_not_found: bool = True,
-) -> List[CaptureDict]:
+) -> list[CaptureDict]:
     """
     Get capture tuples from search nodes. Capture tuples include captured ancestors for rendering breadcrumbs.
 
@@ -697,7 +697,7 @@ def format_breadcrumbs(breadcrumbs: list[Node]):
     return " > ".join(format_node_text(a.text.decode()) for a in reversed(breadcrumbs))
 
 
-def format_annotation(capture_name: str) -> str:
+def format_capture_name(capture_name: str) -> str:
     parts = capture_name.split(".")
     if len(parts) < 2:
         return ""
@@ -717,24 +717,46 @@ def goto_captures(captures: list[CaptureDict], view: sublime.View):
                 trigger=f"{'. ' * len(breadcrumbs)}{format_node_text(capture['node'].text.decode())}",
                 kind=get_capture_kind(capture["name"]),
                 details=format_breadcrumbs([bc["node"] for bc in breadcrumbs]),
-                annotation=format_annotation(capture["name"]),
+                annotation=format_capture_name(capture["name"]),
             )
         )
 
     goto_capture_options(captures, options, view)
 
 
-def goto_capture_options(captures: list[CaptureDict], options: List[sublime.QuickPanelItem], view: sublime.View):
+def goto_capture_options(
+    captures: list[CaptureDict],
+    options: list[sublime.QuickPanelItem],
+    view: sublime.View,
+    filter_by_capture_name: str | None = None,
+):
     """
     Separate from `goto_captures` so that users can easily write their own `goto_captures`, e.g. for custom rendering of
     goto options.
     """
+    filter_option = sublime.QuickPanelItem(
+        trigger="?", kind=(sublime.KindId.AMBIGUOUS, "", ""), details="Select symbol type"
+    )
+
+    if filter_by_capture_name is None:
+        current_captures = [cast(CaptureDict, {}), *captures]
+        current_options = [filter_option, *options]
+    else:
+        current_captures = [cast(CaptureDict, {})]
+        current_options = [filter_option]
+        for idx, capture in enumerate(captures):
+            if capture["name"] == filter_by_capture_name:
+                current_captures.append(capture)
+                current_options.append(options[idx])
 
     def on_highlight(idx: int):
         """
         Scroll to symbol and select it.
         """
-        node = captures[idx]["node"]
+        if idx == 0:  # Not actually a symbol
+            return
+
+        node = current_captures[idx]["node"]
         a = view.text_point_utf8(*node.start_point)
         b = view.text_point_utf8(*node.end_point)
         region = sublime.Region(a, b)
@@ -749,17 +771,20 @@ def goto_capture_options(captures: list[CaptureDict], options: List[sublime.Quic
     xy = view.viewport_position()
 
     # Find capture nearest to first selected region, and open quick panel at this index
-    selected_index = -1
+    selected_index = 1 if len(current_captures) > 1 else 0
     if regions:
         row, _ = view.rowcol(regions[0].begin())
-        for idx, capture in enumerate(captures):
-            if row >= capture["node"].start_point[0]:
+        for idx, capture in enumerate(current_captures):
+            if idx > 0 and row >= capture["node"].start_point[0]:
                 selected_index = idx
 
     def on_select(idx: int):
         """
         If user "cancels" selection, revert selection and viewport position to initial values.
         """
+        if idx == 0:
+            select_capture_name(captures, options, view)
+
         if idx == -1:
             view.set_viewport_position(xy)
             sel = view.sel()
@@ -767,7 +792,38 @@ def goto_capture_options(captures: list[CaptureDict], options: List[sublime.Quic
             sel.add_all(regions)
 
     window = not_none(view.window())
-    window.show_quick_panel(options, on_select=on_select, on_highlight=on_highlight, selected_index=selected_index)
+    window.show_quick_panel(
+        current_options, on_select=on_select, on_highlight=on_highlight, selected_index=max(selected_index, 0)
+    )
+
+
+def select_capture_name(captures: list[CaptureDict], options: list[sublime.QuickPanelItem], view: sublime.View):
+    """
+    - Get unique capture names from captures
+    - Prompt user to select a name, or all capture names
+    - Call `goto_capture_options` with selected name to filter down capture options
+    """
+    capture_names: set[str] = set()
+    for capture in captures:
+        capture_names.add(capture["name"])
+
+    all_types_option = sublime.QuickPanelItem(trigger="All types", kind=(sublime.KindId.AMBIGUOUS, "", ""))
+    capture_name_options: list[sublime.QuickPanelItem] = [all_types_option]
+
+    capture_names_list = sorted(list(capture_names))
+    for name in sorted(capture_names_list):
+        option = sublime.QuickPanelItem(trigger=format_capture_name(name), kind=get_capture_kind(name))
+        capture_name_options.append(option)
+
+    def on_select(idx: int):
+        if idx == -1:
+            return
+
+        capture_name = None if idx == 0 else capture_names_list[idx - 1]
+        goto_capture_options(captures, options, view, capture_name)
+
+    window = not_none(view.window())
+    window.show_quick_panel(capture_name_options, on_select=on_select, selected_index=0)
 
 
 #
@@ -896,7 +952,7 @@ class TreeSitterSelectSymbolsCommand(sublime_plugin.TextCommand):
     Select symbol from current buffer captured by tree sitter query.
     """
 
-    def run(self, edit, region: Tuple[int, int] | None = None, query_file: str = SYMBOLS_FILE, queries_path: str = ""):
+    def run(self, edit, region: tuple[int, int] | None = None, query_file: str = SYMBOLS_FILE, queries_path: str = ""):
         if not (tree_dict := get_tree_dict(self.view.buffer_id())):
             return
 
@@ -924,7 +980,7 @@ class TreeSitterGotoSymbolCommand(sublime_plugin.TextCommand):
     def fallback(self):
         not_none(self.view.window()).run_command("show_overlay", {"overlay": "goto", "text": "@"})
 
-    def run(self, edit, region: Tuple[int, int] | None = None, query_file: str = SYMBOLS_FILE, queries_path: str = ""):
+    def run(self, edit, region: tuple[int, int] | None = None, query_file: str = SYMBOLS_FILE, queries_path: str = ""):
         if not (tree_dict := get_tree_dict(self.view.buffer_id())):
             return self.fallback()
 

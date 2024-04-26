@@ -205,7 +205,7 @@ def descendant_for_byte_range(node: Node, start_byte: int, end_byte: int) -> Nod
     return node.descendant_for_byte_range(start_byte, end_byte)
 
 
-def get_ancestors(node: Node) -> list[Node]:
+def get_ancestors(node: Node, max_len: int | None = None) -> list[Node]:
     """
     Get all ancestors of node, including node itself.
     """
@@ -215,6 +215,9 @@ def get_ancestors(node: Node) -> list[Node]:
     while current_node:
         nodes.append(current_node)
         current_node = current_node.parent
+        if max_len is not None:
+            if len(nodes) >= max_len:
+                break
     return nodes
 
 
@@ -390,8 +393,11 @@ WhichCousinsType = Literal["next", "previous", "all"]
 def get_cousins(
     region: sublime.Region,
     view: sublime.View,
+    *,
     same_types: bool = True,
     same_text: bool = False,
+    same_depth: bool = True,
+    same_types_depth: int | None = None,
     which: WhichCousinsType = "all",
 ) -> list[Node]:
     """
@@ -407,16 +413,21 @@ def get_cousins(
 
     ancestors = get_ancestors(node)
     ancestor_types = [ancestor.type for ancestor in ancestors]
+    if same_types_depth is not None:
+        ancestor_types = ancestor_types[:same_types_depth]
     node_depth = len(ancestors) - 1
 
     cousins: list[Node] = []
-    for cousin, cursor in walk_tree(ancestors[-1], max_depth=node_depth):
-        if cursor.depth != node_depth:
+    for cousin, cursor in walk_tree(ancestors[-1], max_depth=node_depth if same_depth else None):
+        # Don't touch this code, it's optimized for performance
+        if same_depth and cursor.depth != node_depth:
             continue
         if same_text and cousin.text != node.text:
             continue
-        if same_types and [ancestor.type for ancestor in get_ancestors(cousin)] != ancestor_types:
-            continue
+        if same_types:
+            cousin_types = [ancestor.type for ancestor in get_ancestors(cousin, same_types_depth)]
+            if cousin_types != ancestor_types:
+                continue
         cousins.append(cousin)
 
     if which == "all":
@@ -902,6 +913,8 @@ class TreeSitterSelectCousinsCommand(sublime_plugin.TextCommand):
         edit,
         same_types: bool = True,
         same_text: bool = False,
+        same_depth: bool = True,
+        same_types_depth: int | None = None,
         which: WhichCousinsType = "all",
         extend: bool = False,
         reverse_sel: bool = True,
@@ -916,7 +929,15 @@ class TreeSitterSelectCousinsCommand(sublime_plugin.TextCommand):
             regions = sel
 
         for region in regions:
-            for cousin in get_cousins(region, self.view, same_types=same_types, same_text=same_text, which=which):
+            for cousin in get_cousins(
+                region,
+                self.view,
+                same_types=same_types,
+                same_text=same_text,
+                same_depth=same_depth,
+                same_types_depth=same_types_depth,
+                which=which,
+            ):
                 new_region = get_region_from_node(cousin, self.view, reverse=reverse_sel)
                 new_regions.append(new_region)
                 if which != "all" and not extend:

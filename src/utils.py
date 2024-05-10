@@ -291,4 +291,4 @@ def get_language_name_to_parser_path():
 
 
 def get_queries_path():
-    return get_settings_dict().get("queries_path") or ""
+    return get_settings_dict().get("queries_path") or str(QUERIES_PATH)

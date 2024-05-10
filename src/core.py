@@ -102,7 +102,7 @@ mutable_settings = MutableSettings(settings=None)
 
 def on_update_python_path():
     """
-    Reinstantiate langauges in case `python_path` setting updated.
+    Reinstantiate languages in case `python_path` setting updated.
 
     If there's an easier way to check whether plugin settings have changed I'd love to know what it is!
     """

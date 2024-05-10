@@ -15,6 +15,7 @@ from TreeSitter.src.api import (
     get_descendant,
     get_larger_ancestor,
     get_node_spanning_region,
+    get_query_s_from_file,
     get_region_from_node,
     get_scope_to_language_name,
     get_selected_nodes,
@@ -26,12 +27,12 @@ from TreeSitter.src.api import (
     get_view_from_buffer_id,
     goto_capture_options,
     goto_captures,
-    query_node,
     query_node_with_s,
     scroll_to_region,
     show_node_under_selection,
     walk_tree,
 )
+from TreeSitter.src.core import TreeDict
 
 __all__ = [
     "BreadcrumbDict",
@@ -45,6 +46,7 @@ __all__ = [
     "get_descendant",
     "get_larger_ancestor",
     "get_node_spanning_region",
+    "get_query_s_from_file",
     "get_region_from_node",
     "get_scope_to_language_name",
     "get_selected_nodes",
@@ -56,9 +58,9 @@ __all__ = [
     "get_view_from_buffer_id",
     "goto_capture_options",
     "goto_captures",
-    "query_node",
     "query_node_with_s",
     "scroll_to_region",
     "show_node_under_selection",
     "walk_tree",
+    "TreeDict",
 ]

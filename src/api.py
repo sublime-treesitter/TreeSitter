@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import traceback
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterable, Literal, TypedDict, cast
 
@@ -20,16 +19,7 @@ from .core import (
     publish_tree_update,
     trim_cached_trees,
 )
-from .utils import (
-    PROJECT_ROOT,
-    QUERIES_PATH,
-    get_debug,
-    get_queries_path,
-    get_scope_to_language_name,
-    log,
-    maybe_none,
-    not_none,
-)
+from .utils import PROJECT_ROOT, get_queries_path, get_scope_to_language_name, log, maybe_none, not_none
 
 if TYPE_CHECKING:
     from tree_sitter import Node, Tree
@@ -92,7 +82,7 @@ def get_tree_from_code(scope: str, s: str | bytes):
     return parser.parse(s.encode() if isinstance(s, str) else s)
 
 
-def query_node_with_s(scope: str | None, query_s: str, node: Node):
+def query_node_with_s(scope: str | None, node: Node, query_s: str):
     """
     Query a node with `query_s`.
 
@@ -106,9 +96,9 @@ def query_node_with_s(scope: str | None, query_s: str, node: Node):
 
 
 def get_query_s_from_file(
-    queries_path: str | Path,
-    query_file: str,
     language_name: str,
+    queries_path: str | Path = "",
+    query_file: str = SYMBOLS_FILE,
     ignore_file_not_found: bool = False,
 ) -> str:
     """
@@ -118,6 +108,8 @@ def get_query_s_from_file(
     not "strict". See https://github.com/sublime-treesitter/TreeSitter/pull/6 for more context.
     """
     INHERITS_PREFIX = "; inherits:"
+
+    queries_path = os.path.expanduser(queries_path or get_queries_path())
     path = Path(queries_path) / language_name / query_file
 
     languages: list[str] = []
@@ -136,32 +128,14 @@ def get_query_s_from_file(
 
     queries = [
         get_query_s_from_file(
-            queries_path,
-            query_file=query_file,
             language_name=lang,
+            queries_path=queries_path,
+            query_file=query_file,
             ignore_file_not_found=True,
         )
         for lang in languages
     ]
     return "\n".join([query_s, *queries])
-
-
-def query_node(
-    scope: str | None,
-    node: Node,
-    query_file: str,
-    queries_path: str | Path = "",
-):
-    """
-    Query a node with a query file.
-    """
-    if not (scope := check_scope(scope)):
-        return
-    language_name = get_scope_to_language_name()[scope]
-
-    queries_path = os.path.expanduser(queries_path or QUERIES_PATH)
-    query_s = get_query_s_from_file(queries_path, query_file=query_file, language_name=language_name)
-    return query_node_with_s(scope, query_s, node)
 
 
 def walk_tree(tree_or_node: Tree | Node, max_depth: int | None = None):
@@ -610,19 +584,9 @@ class CaptureDict(TypedDict):
     breadcrumb: BreadcrumbDict | None
 
 
-def get_captures_from_nodes(
-    nodes: list[Node],
-    view: sublime.View,
-    query_file: str = SYMBOLS_FILE,
-    queries_path: str | Path = "",
-    handle_query_file_not_found: bool = True,
-) -> list[CaptureDict]:
+def get_captures_from_nodes(nodes: list[Node], view: sublime.View, query_s: str) -> list[CaptureDict]:
     """
     Get capture tuples from search nodes. Capture tuples include captured ancestors for rendering breadcrumbs.
-
-    Raises:
-
-    - `FileNotFoundError` if query file doesn't exist, and `handle_query_file_not_found` is `False`
     """
 
     if not (tree_dict := get_tree_dict(view.buffer_id())):
@@ -632,17 +596,8 @@ def get_captures_from_nodes(
     node_id_to_breadcrumb_depth: dict[int, int] = {}
     captures: list[CaptureDict] = []
 
-    queries_path = queries_path or get_queries_path()
-
     for search_node in nodes:
-        try:
-            query_captures = query_node(tree_dict["scope"], search_node, query_file, queries_path)
-        except FileNotFoundError as e:
-            if not handle_query_file_not_found:
-                raise
-            if get_debug():
-                log("".join(traceback.format_exception(None, e, e.__traceback__)))
-            return []
+        query_captures = query_node_with_s(tree_dict["scope"], search_node, query_s)
 
         # Do a first pass through captured nodes to see which ones are "breadcrumbs"
         for captured_node, capture_name in query_captures or []:
@@ -975,17 +930,24 @@ class TreeSitterSelectSymbolsCommand(sublime_plugin.TextCommand):
     Select symbol from current buffer captured by tree sitter query.
     """
 
-    def run(self, edit, region: tuple[int, int] | None = None, query_file: str = SYMBOLS_FILE, queries_path: str = ""):
+    def run(
+        self,
+        edit,
+        region: tuple[int, int] | None = None,
+        queries_path: str = "",
+        query_file: str = SYMBOLS_FILE,
+        ignore_file_not_found=True,
+    ):
         if not (tree_dict := get_tree_dict(self.view.buffer_id())):
             return
 
-        if captures := get_captures_from_nodes(
-            [tree_dict["tree"].root_node],
-            self.view,
+        query_s = get_query_s_from_file(
+            language_name=get_scope_to_language_name()[tree_dict["scope"]],
+            queries_path=queries_path or get_queries_path(),
             query_file=query_file,
-            queries_path=queries_path,
-            handle_query_file_not_found=False,
-        ):
+            ignore_file_not_found=ignore_file_not_found,
+        )
+        if captures := get_captures_from_nodes([tree_dict["tree"].root_node], self.view, query_s=query_s):
             sel = self.view.sel()
             sel.clear()
             for capture in captures:
@@ -1003,17 +965,24 @@ class TreeSitterGotoSymbolCommand(sublime_plugin.TextCommand):
     def fallback(self):
         not_none(self.view.window()).run_command("show_overlay", {"overlay": "goto", "text": "@"})
 
-    def run(self, edit, region: tuple[int, int] | None = None, query_file: str = SYMBOLS_FILE, queries_path: str = ""):
+    def run(
+        self,
+        edit,
+        region: tuple[int, int] | None = None,
+        queries_path: str = "",
+        query_file: str = SYMBOLS_FILE,
+        ignore_file_not_found=True,
+    ):
         if not (tree_dict := get_tree_dict(self.view.buffer_id())):
             return self.fallback()
 
-        if captures := get_captures_from_nodes(
-            [tree_dict["tree"].root_node],
-            self.view,
+        query_s = get_query_s_from_file(
+            language_name=get_scope_to_language_name()[tree_dict["scope"]],
+            queries_path=queries_path or get_queries_path(),
             query_file=query_file,
-            queries_path=queries_path,
-            handle_query_file_not_found=True,
-        ):
+            ignore_file_not_found=ignore_file_not_found,
+        )
+        if captures := get_captures_from_nodes([tree_dict["tree"].root_node], self.view, query_s=query_s):
             return goto_captures(captures, self.view)
 
         self.fallback()

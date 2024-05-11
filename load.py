@@ -11,6 +11,7 @@ from .src.api import (  # noqa: F401, E402
     TreeSitterGotoSymbolCommand,
     TreeSitterOnSelectionModifiedListener,
     TreeSitterPrintTreeCommand,
+    TreeSitterQuerySymbolCommand,
     TreeSitterReloadCommand,
     TreeSitterSelectAncestorCommand,
     TreeSitterSelectCousinsCommand,

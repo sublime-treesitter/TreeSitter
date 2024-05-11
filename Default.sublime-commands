@@ -44,6 +44,10 @@
     "command": "tree_sitter_goto_symbol",
   },
   {
+    "caption": "TreeSitter: Query Symbol",
+    "command": "tree_sitter_query_symbol",
+  },
+  {
     "caption": "TreeSitter: Print Tree",
     "command": "tree_sitter_print_tree",
   },

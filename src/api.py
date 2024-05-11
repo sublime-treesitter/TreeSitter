@@ -988,6 +988,31 @@ class TreeSitterGotoSymbolCommand(sublime_plugin.TextCommand):
         self.fallback()
 
 
+class TreeSitterQuerySymbolCommand(sublime_plugin.WindowCommand):
+    """
+    Prompt user to input a query string, and search buffer for symbols matching query string.
+    """
+
+    query_s = ""  # So this can be cached and reused
+
+    def run(self):
+        if not (view := self.window.active_view()) or not get_tree_dict(view.buffer_id()):
+            return  # No point in prompting user for input if we can't parse buffer
+        self.window.show_input_panel("query:", self.query_s, self.on_done, None, None)
+
+    def on_done(self, query_s: str):
+        if not (view := self.window.active_view()) or not (tree_dict := get_tree_dict(view.buffer_id())):
+            return
+        # Transform query_s, e.g. in case it's missing capture name
+        if "@" not in query_s:
+            query_s = f"(({query_s}) @definition.query)"
+        self.query_s = query_s
+
+        nodes = get_selected_nodes(view) or [tree_dict["tree"].root_node]
+        if captures := get_captures_from_nodes(nodes, view, query_s):
+            goto_captures(captures, view)
+
+
 class TreeSitterPrintTreeCommand(sublime_plugin.TextCommand):
     """
     For debugging. If nothing selected, print syntax tree for buffer. Else, print segment(s) of tree for selection(s).

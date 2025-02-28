@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, TypedDict, TypeVar, cast
 
@@ -18,6 +19,14 @@ LIB_PATH = PROJECT_ROOT / "src" / "lib"
 SETTINGS_FILENAME = "TreeSitter.sublime-settings"
 
 T = TypeVar("T")
+
+
+@dataclass
+class MutableSettings:
+    d: SettingsDict | None
+
+
+mutable_settings = MutableSettings(d=None)
 
 
 def maybe_none(var: T) -> T | None:
@@ -57,6 +66,7 @@ class SettingsDict(TypedDict):
     language_name_to_debounce_ms: NotRequired[dict[str, float]]
     debug: NotRequired[bool]
     queries_path: NotRequired[str]
+    file_ignore_patterns: NotRequired[list[str]]
 
 
 ScopeType = Literal[
@@ -245,21 +255,26 @@ def get_settings():
     return sublime.load_settings(SETTINGS_FILENAME)
 
 
+def get_settings_dict(*, force_reload: bool = False) -> SettingsDict:
+    if force_reload or mutable_settings.d is None:
+        return cast(SettingsDict, get_settings().to_dict())
+    return mutable_settings.d
+
+
 def get_debug():
     return get_settings_dict().get("debug") or False
 
 
-def get_settings_dict(settings: sublime.Settings | None = None):
-    return cast(SettingsDict, (settings or get_settings()).to_dict())
+def get_file_ignore_patterns():
+    return get_settings_dict().get("file_ignore_patterns", [])
 
 
 def get_language_name_to_scopes():
-    settings_d = get_settings_dict().get("language_name_to_scopes") or {}
-    return {**LANGUAGE_NAME_TO_SCOPES, **settings_d}
+    return {**LANGUAGE_NAME_TO_SCOPES, **get_settings_dict().get("language_name_to_scopes", {})}
 
 
 def get_language_name_to_debounce_ms():
-    return get_settings_dict().get("language_name_to_debounce_ms") or {}
+    return get_settings_dict().get("language_name_to_debounce_ms", {})
 
 
 def get_scope_to_language_name():
@@ -273,8 +288,7 @@ def get_scope_to_language_name():
 
 
 def get_language_name_to_repo():
-    settings_d = get_settings_dict().get("language_name_to_repo") or {}
-    return {**LANGUAGE_NAME_TO_REPO, **settings_d}
+    return {**LANGUAGE_NAME_TO_REPO, **get_settings_dict().get("language_name_to_repo", {})}
 
 
 def get_language_name_to_parser_path():

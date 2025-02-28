@@ -101,6 +101,13 @@
               "type": "string",
               "markdownDescription": "Path to queries files for all languages"
             },
+            "file_ignore_patterns": {
+              "type": "array",
+              "items": {
+                  "type": "string"
+              },
+              "markdownDescription": "If file matches any of these regex patterns, ignore it (useful for e.g. files that cause Tree-sitter parse errors)"
+            },
             "debug": {
               "type": "boolean",
               "markdownDescription": "Enable debug logging and assertions; has non-zero performance cost, for developers only"

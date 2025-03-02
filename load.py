@@ -1,6 +1,6 @@
 import sys
 
-prefix = __package__ + "."  # Don't clear the base package
+prefix = __package__ + "."  # type: ignore # Don't clear the base package
 for module_name in [
     module_name for module_name in sys.modules if module_name.startswith(prefix) and module_name != __name__
 ]:

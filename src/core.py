@@ -37,6 +37,7 @@ It has the following limitations:
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import time
 from pathlib import Path
@@ -57,6 +58,7 @@ from .utils import (
     SettingsDict,
     add_path,
     get_debug,
+    get_file_ignore_patterns,
     get_language_name_to_debounce_ms,
     get_language_name_to_parser_path,
     get_language_name_to_repo,
@@ -65,6 +67,7 @@ from .utils import (
     get_settings,
     get_settings_dict,
     log,
+    mutable_settings,
 )
 
 if TYPE_CHECKING:
@@ -89,29 +92,29 @@ class TreeDict(TypedDict):
     updated_s: float
 
 
-class MutableSettings(TypedDict):
-    settings: SettingsDict | None
-
-
 #
 # Code for installing tree sitter, and installing/building languages
 #
 
-mutable_settings = MutableSettings(settings=None)
 
-
-def on_update_python_path():
+def on_update_settings():
     """
     Reinstantiate languages in case `python_path` setting updated.
 
     If there's an easier way to check whether plugin settings have changed I'd love to know what it is!
     """
-    settings_dict = get_settings_dict()
-    if previous_settings_dict := mutable_settings["settings"]:
-        if previous_settings_dict.get("python_path") != settings_dict.get("python_path"):
+    settings_dict = get_settings_dict(force_reload=True)
+    previous_settings_dict = mutable_settings.d
+    mutable_settings.d = settings_dict
+
+    if previous_settings_dict is not None:
+        python_path_changed = previous_settings_dict.get("python_path") != settings_dict.get("python_path")
+        installed_languages_changed = set(previous_settings_dict.get("installed_languages")) != set(
+            settings_dict.get("installed_languages")
+        )
+        if python_path_changed or installed_languages_changed:
             instantiate_languages()
             Thread(target=install_languages).start()
-    mutable_settings["settings"] = settings_dict
 
 
 def on_load():
@@ -129,9 +132,9 @@ def on_load():
         pass
 
     settings = get_settings()
-    mutable_settings["settings"] = get_settings_dict(settings)
+    mutable_settings.d = cast(SettingsDict, settings.to_dict())
     settings.clear_on_change("TreeSitter")
-    settings.add_on_change("TreeSitter", on_update_python_path)
+    settings.add_on_change("TreeSitter", on_update_settings)
 
     if not get_settings_dict().get("python_path"):
         log("`python_path` not set, using language binaries bundled with tree_sitter_languages")
@@ -440,6 +443,11 @@ def make_tree_dict(tree: Tree, s: str, scope: ScopeType) -> TreeDict:
 
 
 def get_scope(view: View) -> str | None:
+    if (file_ignore_patterns := get_file_ignore_patterns()) and (file_path := view.file_name()):
+        for pattern in file_ignore_patterns:
+            if re.search(pattern, file_path):
+                return None
+
     syntax = view.syntax()
     if not syntax:
         return None

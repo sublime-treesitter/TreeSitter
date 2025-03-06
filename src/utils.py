@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import sys
-from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, TypedDict, TypeVar, cast
 
@@ -19,14 +18,6 @@ LIB_PATH = PROJECT_ROOT / "src" / "lib"
 SETTINGS_FILENAME = "TreeSitter.sublime-settings"
 
 T = TypeVar("T")
-
-
-@dataclass
-class MutableSettings:
-    d: SettingsDict | None
-
-
-mutable_settings = MutableSettings(d=None)
 
 
 def maybe_none(var: T) -> T | None:
@@ -255,45 +246,48 @@ def get_settings():
     return sublime.load_settings(SETTINGS_FILENAME)
 
 
-def get_settings_dict(*, force_reload: bool = False) -> SettingsDict:
-    if force_reload or mutable_settings.d is None:
-        return cast(SettingsDict, get_settings().to_dict())
-    return mutable_settings.d
+def get_settings_dict() -> SettingsDict:
+    return cast(SettingsDict, get_settings().to_dict())
 
 
-def get_debug():
-    return get_settings_dict().get("debug") or False
+def get_debug(d: SettingsDict | None = None):
+    d = d or get_settings_dict()
+    return d.get("debug") or False
 
 
-def get_file_ignore_patterns():
-    return get_settings_dict().get("file_ignore_patterns", [])
+def get_file_ignore_patterns(d: SettingsDict | None = None):
+    d = d or get_settings_dict()
+    return d.get("file_ignore_patterns", [])
 
 
-def get_language_name_to_scopes():
-    return {**LANGUAGE_NAME_TO_SCOPES, **get_settings_dict().get("language_name_to_scopes", {})}
+def get_language_name_to_scopes(d: SettingsDict | None = None):
+    d = d or get_settings_dict()
+    return {**LANGUAGE_NAME_TO_SCOPES, **d.get("language_name_to_scopes", {})}
 
 
-def get_language_name_to_debounce_ms():
-    return get_settings_dict().get("language_name_to_debounce_ms", {})
+def get_language_name_to_debounce_ms(d: SettingsDict | None = None):
+    d = d or get_settings_dict()
+    return d.get("language_name_to_debounce_ms", {})
 
 
-def get_scope_to_language_name():
+def get_scope_to_language_name(d: SettingsDict | None = None):
     scope_to_language_name: dict[ScopeType, str] = {}
 
-    language_name_to_scopes = get_language_name_to_scopes()
+    language_name_to_scopes = get_language_name_to_scopes(d)
     for language_name, scopes in language_name_to_scopes.items():
         for scope in scopes:
             scope_to_language_name[scope] = language_name
     return scope_to_language_name
 
 
-def get_language_name_to_repo():
-    return {**LANGUAGE_NAME_TO_REPO, **get_settings_dict().get("language_name_to_repo", {})}
+def get_language_name_to_repo(d: SettingsDict | None = None):
+    d = d or get_settings_dict()
+    return {**LANGUAGE_NAME_TO_REPO, **d.get("language_name_to_repo", {})}
 
 
-def get_language_name_to_parser_path():
+def get_language_name_to_parser_path(d: SettingsDict | None = None):
     language_name_to_parser_path: dict[str, str] = {}
-    language_name_to_repo = get_language_name_to_repo()
+    language_name_to_repo = get_language_name_to_repo(d)
 
     for name, repo_dict in language_name_to_repo.items():
         _, repo = repo_dict["repo"].split("/")
@@ -304,5 +298,6 @@ def get_language_name_to_parser_path():
     return language_name_to_parser_path
 
 
-def get_queries_path():
-    return get_settings_dict().get("queries_path") or str(QUERIES_PATH)
+def get_queries_path(d: SettingsDict | None = None):
+    d = d or get_settings_dict()
+    return d.get("queries_path") or str(QUERIES_PATH)

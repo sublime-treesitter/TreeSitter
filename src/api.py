@@ -15,6 +15,7 @@ from .core import (
     get_scope,
     get_view_text,
     make_tree_dict,
+    mutable_settings,
     parse,
     publish_tree_update,
     trim_cached_trees,
@@ -109,7 +110,7 @@ def get_query_s_from_file(
     """
     INHERITS_PREFIX = "; inherits:"
 
-    queries_path = os.path.expanduser(queries_path or get_queries_path())
+    queries_path = os.path.expanduser(queries_path or get_queries_path(mutable_settings.d))
     path = Path(queries_path) / language_name / query_file
 
     languages: list[str] = []
@@ -501,7 +502,7 @@ def show_node_under_selection(view: sublime.View, select: bool, **kwargs):
         ("type", node.type),
         ("depth", str(get_depth(node))),
         ("range", f"{node.start_point} → {node.end_point}"),
-        ("lang", get_scope_to_language_name()[tree_dict["scope"]]),
+        ("lang", get_scope_to_language_name(mutable_settings.d)[tree_dict["scope"]]),
         ("scope", tree_dict["scope"]),
     ]
     if field_name := get_field_name(node):
@@ -942,8 +943,8 @@ class TreeSitterSelectSymbolsCommand(sublime_plugin.TextCommand):
             return
 
         query_s = get_query_s_from_file(
-            language_name=get_scope_to_language_name()[tree_dict["scope"]],
-            queries_path=queries_path or get_queries_path(),
+            language_name=get_scope_to_language_name(mutable_settings.d)[tree_dict["scope"]],
+            queries_path=queries_path or get_queries_path(mutable_settings.d),
             query_file=query_file,
             ignore_file_not_found=ignore_file_not_found,
         )
@@ -977,8 +978,8 @@ class TreeSitterGotoSymbolCommand(sublime_plugin.TextCommand):
             return self.fallback()
 
         query_s = get_query_s_from_file(
-            language_name=get_scope_to_language_name()[tree_dict["scope"]],
-            queries_path=queries_path or get_queries_path(),
+            language_name=get_scope_to_language_name(mutable_settings.d)[tree_dict["scope"]],
+            queries_path=queries_path or get_queries_path(mutable_settings.d),
             query_file=query_file,
             ignore_file_not_found=ignore_file_not_found,
         )

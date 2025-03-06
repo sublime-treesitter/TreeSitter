@@ -40,6 +40,7 @@ import os
 import re
 import subprocess
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from shutil import rmtree
 from threading import Thread
@@ -67,11 +68,20 @@ from .utils import (
     get_settings,
     get_settings_dict,
     log,
-    mutable_settings,
 )
 
 if TYPE_CHECKING:
     from tree_sitter import Language, Parser, Tree
+
+
+@dataclass
+class MutableSettings:
+    d: SettingsDict | None
+
+
+# Don't put this var in `utils.py`
+mutable_settings = MutableSettings(d=None)
+
 
 PROJECT_REPO = "https://github.com/sublime-treesitter/TreeSitter"
 
@@ -103,7 +113,7 @@ def on_update_settings():
 
     If there's an easier way to check whether plugin settings have changed I'd love to know what it is!
     """
-    settings_dict = get_settings_dict(force_reload=True)
+    settings_dict = get_settings_dict()
     previous_settings_dict = mutable_settings.d
     mutable_settings.d = settings_dict
 
@@ -174,7 +184,7 @@ def clone_languages():
 
     language_names = settings_dict["installed_languages"]
     files = set(f for f in os.listdir(BUILD_PATH))
-    language_name_to_repo = get_language_name_to_repo()
+    language_name_to_repo = get_language_name_to_repo(mutable_settings.d)
 
     for name in set(language_names):
         if name not in language_name_to_repo:
@@ -218,7 +228,7 @@ def build_languages():
         pip_path = str(Path(head) / "pip")
 
     files = set(f for f in os.listdir(BUILD_PATH))
-    language_name_to_parser_path = get_language_name_to_parser_path()
+    language_name_to_parser_path = get_language_name_to_parser_path(mutable_settings.d)
 
     for name in set(language_names):
         if (so_file := get_so_file(name)) in files:
@@ -253,7 +263,7 @@ def instantiate_languages():
     settings_dict = get_settings_dict()
     python_path = settings_dict.get("python_path")
     language_names = settings_dict["installed_languages"]
-    language_name_to_scopes = get_language_name_to_scopes()
+    language_name_to_scopes = get_language_name_to_scopes(mutable_settings.d)
 
     for name in set(language_names):
         if name not in language_name_to_scopes:
@@ -443,7 +453,7 @@ def make_tree_dict(tree: Tree, s: str, scope: ScopeType) -> TreeDict:
 
 
 def get_scope(view: View) -> str | None:
-    if (file_ignore_patterns := get_file_ignore_patterns()) and (file_path := view.file_name()):
+    if (file_ignore_patterns := get_file_ignore_patterns(mutable_settings.d)) and (file_path := view.file_name()):
         for pattern in file_ignore_patterns:
             if re.search(pattern, file_path):
                 return None
@@ -613,7 +623,7 @@ class TreeSitterTextChangeListener(sublime_plugin.TextChangeListener):
     def __init__(self, *args, **kwargs):
         self.debounce_ms: int | None = None
         self.last_text_changed_s = 0
-        self.debug = get_debug()
+        self.debug = get_debug(mutable_settings.d)
         super().__init__(*args, **kwargs)
 
     @property
@@ -631,8 +641,8 @@ class TreeSitterTextChangeListener(sublime_plugin.TextChangeListener):
             return
 
         if self.debounce_ms is None:
-            scope_to_language_name = get_scope_to_language_name()
-            language_name_to_debounce_ms = get_language_name_to_debounce_ms()
+            scope_to_language_name = get_scope_to_language_name(mutable_settings.d)
+            language_name_to_debounce_ms = get_language_name_to_debounce_ms(mutable_settings.d)
             self.debounce_ms = round(language_name_to_debounce_ms.get(scope_to_language_name[scope], 0))
 
         buffer_id = self.buffer.id()
@@ -685,7 +695,7 @@ class TreeSitterTextChangeListener(sublime_plugin.TextChangeListener):
 
 
 def get_instantiated_language_names():
-    return set(get_scope_to_language_name()[scope] for scope in SCOPE_TO_LANGUAGE)
+    return set(get_scope_to_language_name(mutable_settings.d)[scope] for scope in SCOPE_TO_LANGUAGE)
 
 
 def remove_language(language: str):
@@ -694,7 +704,7 @@ def remove_language(language: str):
     - Remove `Language` instance from `SCOPE_TO_LANGUAGE`
     """
     if get_settings_dict().get("python_path"):
-        repo_dict = get_language_name_to_repo().get(language)
+        repo_dict = get_language_name_to_repo(mutable_settings.d).get(language)
         if repo_dict:
             _, repo = repo_dict["repo"].split("/")
             try:
@@ -708,7 +718,7 @@ def remove_language(language: str):
         except Exception as e:
             log(f"error removing {so_file} for {language}: {e}")
 
-    for scope in get_language_name_to_scopes().get(language, []):
+    for scope in get_language_name_to_scopes(mutable_settings.d).get(language, []):
         SCOPE_TO_LANGUAGE.pop(scope, None)
 
 
@@ -720,12 +730,12 @@ class TreeSitterSelectLanguageMixin:
         Allow user to select from installed and uninstalled languages in quick panel. Render language for the active
         view's scope as first option.
         """
-        available_languages = sorted(list(get_language_name_to_scopes().keys()))
+        available_languages = sorted(list(get_language_name_to_scopes(mutable_settings.d).keys()))
         instantiated_languages = get_instantiated_language_names()
 
         view = self.window.active_view()
         scope = get_scope(view) if view else None
-        scope_to_language_name = get_scope_to_language_name()
+        scope_to_language_name = get_scope_to_language_name(mutable_settings.d)
         active_language = scope_to_language_name[scope] if scope in scope_to_language_name else None
 
         if active_language in available_languages:

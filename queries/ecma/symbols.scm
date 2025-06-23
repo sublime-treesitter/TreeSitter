@@ -4,6 +4,7 @@
 (variable_declarator (identifier) @definition.function @breadcrumb.1 (arrow_function))
 (method_definition (property_identifier) @definition.function @breadcrumb.1)
 (pair (property_identifier) @definition.function (arrow_function))
+(public_field_definition (property_identifier) @definition.function @breadcrumb.1 (arrow_function))
 
 (program (lexical_declaration (variable_declarator
   [

@@ -540,6 +540,7 @@ CaptureNameType = Literal[
     "definition.block",
     "definition.if",
     "definition.loop",
+    "definition.test",
 ]
 
 CAPTURE_NAME_TO_KIND: dict[CaptureNameType, sublime.Kind] = {
@@ -556,6 +557,7 @@ CAPTURE_NAME_TO_KIND: dict[CaptureNameType, sublime.Kind] = {
     "definition.block": (sublime.KindId.COLOR_DARK, "b", "b"),
     "definition.if": (sublime.KindId.COLOR_DARK, "i", "i"),
     "definition.loop": (sublime.KindId.COLOR_DARK, "l", "l"),
+    "definition.test": (sublime.KindId.COLOR_DARK, "t", "t"),
 }
 
 

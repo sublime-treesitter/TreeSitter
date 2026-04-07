@@ -11,7 +11,9 @@
                 "enum": [
                   "python",
                   "typescript",
+                  "typescript_test",
                   "tsx",
+                  "tsx_test",
                   "javascript",
                   "css",
                   "scss",

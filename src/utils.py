@@ -63,7 +63,9 @@ class SettingsDict(TypedDict):
 ScopeType = Literal[
     "source.python",
     "source.ts",
+    "source.ts.unittest",
     "source.tsx",
+    "source.tsx.unittest",
     "source.js",
     "source.jsx",
     "source.css",
@@ -74,6 +76,8 @@ ScopeType = Literal[
     "source.ruby",
     "source.java",
     "source.php",
+    "embedding.php",
+    "text.html.php",
     "source.zig",
     "source.c",
     "source.c++",
@@ -114,7 +118,9 @@ ScopeType = Literal[
 LANGUAGE_NAME_TO_SCOPES: dict[str, list[ScopeType]] = {
     "python": ["source.python"],
     "typescript": ["source.ts"],
+    "typescript_test": ["source.ts.unittest"],
     "tsx": ["source.tsx"],
+    "tsx_test": ["source.tsx.unittest"],
     "javascript": [
         "source.js",
         "source.jsx",
@@ -126,7 +132,11 @@ LANGUAGE_NAME_TO_SCOPES: dict[str, list[ScopeType]] = {
     "lua": ["source.lua"],
     "ruby": ["source.ruby"],
     "java": ["source.java"],
-    "php": ["source.php"],
+    "php": [
+        "source.php",
+        "embedding.php",
+        "text.html.php",
+    ],
     "zig": ["source.zig"],
     "c": ["source.c"],
     "cpp": ["source.c++"],
@@ -166,14 +176,6 @@ LANGUAGE_NAME_TO_SCOPES: dict[str, list[ScopeType]] = {
     "hack": ["source.hack"],
 }
 
-"""
-Notes on languages
-
-- "markdown": "MDeiml/tree-sitter-markdown"
-    - Not enabling this because it frequently crashes Sublime Text on edit, apparently also causes issues in neovim
-    - https://github.com/MDeiml/tree-sitter-markdown/issues/114
-"""
-
 
 class RepoDict(TypedDict):
     """
@@ -190,7 +192,9 @@ class RepoDict(TypedDict):
 LANGUAGE_NAME_TO_REPO: dict[str, RepoDict] = {
     "python": {"repo": "tree-sitter/tree-sitter-python"},
     "typescript": {"repo": "tree-sitter/tree-sitter-typescript", "parser_path": "typescript"},
+    "typescript_test": {"repo": "tree-sitter/tree-sitter-typescript", "parser_path": "typescript"},
     "tsx": {"repo": "tree-sitter/tree-sitter-typescript", "parser_path": "tsx"},
+    "tsx_test": {"repo": "tree-sitter/tree-sitter-typescript", "parser_path": "tsx"},
     "javascript": {"repo": "tree-sitter/tree-sitter-javascript"},
     "css": {"repo": "tree-sitter/tree-sitter-css"},
     "scss": {"repo": "serenadeai/tree-sitter-scss"},
@@ -199,7 +203,8 @@ LANGUAGE_NAME_TO_REPO: dict[str, RepoDict] = {
     "lua": {"repo": "MunifTanjim/tree-sitter-lua"},
     "ruby": {"repo": "tree-sitter/tree-sitter-ruby"},
     "java": {"repo": "tree-sitter/tree-sitter-java"},
-    "php": {"repo": "tree-sitter/tree-sitter-php"},
+    # Newer PHP versions use ABI 15, which isn't supported by any tree_sitter versions that run on Python 3.8
+    "php": {"repo": "tree-sitter/tree-sitter-php", "parser_path": "php", "branch": "v0.22.8"},
     "zig": {"repo": "maxxnino/tree-sitter-zig"},
     "c": {"repo": "tree-sitter/tree-sitter-c"},
     "cpp": {"repo": "tree-sitter/tree-sitter-cpp"},

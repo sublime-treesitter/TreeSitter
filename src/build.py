@@ -10,14 +10,15 @@ pip_path = sys.argv[1]
 language_source_path = sys.argv[2]
 language_file_path = sys.argv[3]
 
-TREE_SITTER_BINDINGS_VERSION = "0.20.4"
+# https://pypi.org/project/tree-sitter/#history
+TREE_SITTER_BINDINGS_VERSION = "0.21.3"
 
 try:
     v = version("tree_sitter")
 except PackageNotFoundError:
     v = ""
 if v != TREE_SITTER_BINDINGS_VERSION:
-    # Bindings non installed/correct version not installed; call with `check=True` to block until subprocess completes
+    # Bindings not installed/correct version not installed; call with `check=True` to block until subprocess completes
     subprocess.run([pip_path, "install", f"tree_sitter=={TREE_SITTER_BINDINGS_VERSION}"], check=True)
 
 from tree_sitter import Language  # noqa: E402

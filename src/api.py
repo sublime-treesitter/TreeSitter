@@ -559,6 +559,7 @@ CAPTURE_NAME_TO_KIND: dict[CaptureNameType, sublime.Kind] = {
 }
 
 
+CAPTURE_NAME_PREFIX = "definition."
 BREADCRUMB_CAPTURE_NAME = "breadcrumb"
 
 
@@ -607,6 +608,9 @@ def get_captures_from_nodes(nodes: list[Node], view: sublime.View, query_s: str)
 
         for captured_node, capture_name in query_captures or []:
             if capture_name.startswith(BREADCRUMB_CAPTURE_NAME):
+                continue
+
+            if not capture_name.startswith(CAPTURE_NAME_PREFIX):
                 continue
 
             breadcrumb: BreadcrumbDict | None = None

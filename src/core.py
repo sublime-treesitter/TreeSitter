@@ -164,6 +164,7 @@ def clone_language(org_and_repo: str, branch: str = ""):
     subprocess.run(["git", "clone", f"https://github.com/{org_and_repo}", repo_path], check=True)
 
     if branch:
+        # TODO: this shouldn't be called here, because then it's never called if `git clone` fails
         subprocess.run(["git", "checkout", branch], cwd=repo_path, check=True)
 
 

@@ -11,9 +11,7 @@
                 "enum": [
                   "python",
                   "typescript",
-                  "typescript_test",
                   "tsx",
-                  "tsx_test",
                   "javascript",
                   "css",
                   "scss",
@@ -69,12 +67,19 @@
               "type": "string",
               "markdownDescription": "If `python_path` is set, set this to corresponding path for `pip`; inferred from `python_path` if left blank"
             },
-            "language_name_to_scopes": {
+            "scope_to_language_name": {
               "type": "object",
               "patternProperties": {
-                ".*": { "type": "array", "items": { "type": "string" } }
+                ".*": { "type": "string" }
               },
-              "markdownDescription": "Override or extend which languages apply to which Sublime Text scopes, see [src/utils.py](https://github.com/sublime-treesitter/TreeSitter/blob/main/src/utils.py)"
+              "markdownDescription": "Override or extend which language to use for which Sublime Text scope, see [src/utils.py](https://github.com/sublime-treesitter/TreeSitter/blob/main/src/utils.py)"
+            },
+            "scope_to_queries_name": {
+              "type": "object",
+              "patternProperties": {
+                ".*": { "type": "string" }
+              },
+              "markdownDescription": "Override or extend which which queries to use for which Sublime Text scope"
             },
             "language_name_to_repo": {
               "type": "object",
@@ -106,7 +111,7 @@
             "file_ignore_patterns": {
               "type": "array",
               "items": {
-                  "type": "string"
+                "type": "string"
               },
               "markdownDescription": "If file matches any of these regex patterns, ignore it (useful for e.g. files that cause Tree-sitter parse errors)"
             },

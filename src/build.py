@@ -2,6 +2,7 @@
 This can be called with a system python (not Sublime's python) in a subprocess to build .so files. It's only called if
 `python_path` is set.
 """
+
 import subprocess
 import sys
 from importlib.metadata import PackageNotFoundError, version

@@ -51,7 +51,8 @@ class SettingsDict(TypedDict):
     installed_languages: list[str]
     python_path: NotRequired[str]
     pip_path: NotRequired[str]
-    language_name_to_scopes: NotRequired[dict[str, list[ScopeType]]]
+    scope_to_language_name: NotRequired[dict[ScopeType, str]]
+    scope_to_queries_name: NotRequired[dict[ScopeType, str]]
     language_name_to_repo: NotRequired[dict[str, RepoDict]]
     language_name_to_parser_path: NotRequired[dict[str, str]]
     language_name_to_debounce_ms: NotRequired[dict[str, float]]
@@ -115,65 +116,65 @@ ScopeType = Literal[
     "source.hack",
 ]
 
-LANGUAGE_NAME_TO_SCOPES: dict[str, list[ScopeType]] = {
-    "python": ["source.python"],
-    "typescript": ["source.ts"],
-    "typescript_test": ["source.ts.unittest"],
-    "tsx": ["source.tsx"],
-    "tsx_test": ["source.tsx.unittest"],
-    "javascript": [
-        "source.js",
-        "source.jsx",
-    ],
-    "css": ["source.css"],
-    "scss": ["source.scss"],
-    "go": ["source.go"],
-    "rust": ["source.rust"],
-    "lua": ["source.lua"],
-    "ruby": ["source.ruby"],
-    "java": ["source.java"],
-    "php": [
-        "source.php",
-        "embedding.php",
-        "text.html.php",
-    ],
-    "zig": ["source.zig"],
-    "c": ["source.c"],
-    "cpp": ["source.c++"],
-    "c_sharp": ["source.cs"],
-    "scala": ["source.scala"],
-    "kotlin": ["source.Kotlin"],
-    "julia": ["source.julia"],
-    "haskell": ["source.haskell"],
-    "clojure": ["source.clojure"],
-    "elixir": ["source.elixir"],
-    "toml": ["source.toml"],
-    "yaml": ["source.yaml"],
-    "json": ["source.json"],
-    "bash": ["source.shell"],
-    "query": ["source.scheme"],
-    "vue": ["text.html.vue"],
-    "svelte": ["text.html.svelte"],
-    "sql": ["source.sql"],
-    "html": [
-        "text.html.basic",
-        "text.xml",
-    ],
-    "markdown": ["text.html.markdown"],
-    "erlang": ["source.erlang"],
-    "make": ["source.makefile"],
-    "dockerfile": ["source.dockerfile"],
-    "elm": ["source.elm"],
-    "perl": ["source.perl"],
-    "objc": ["source.objc"],
-    "r": ["source.r"],
-    "rst": ["text.restructuredtext"],
-    "ocaml": ["source.ocaml"],
-    "regex": ["source.regexp"],
-    "latex": ["text.tex.latex"],
-    "hcl": ["source.hcl"],
-    "terraform": ["source.terraform"],
-    "hack": ["source.hack"],
+SCOPE_TO_LANGUAGE_NAME: dict[ScopeType, str] = {
+    "source.python": "python",
+    "source.ts": "typescript",
+    "source.ts.unittest": "typescript",
+    "source.tsx": "tsx",
+    "source.tsx.unittest": "tsx",
+    "source.js": "javascript",
+    "source.jsx": "javascript",
+    "source.css": "css",
+    "source.scss": "scss",
+    "source.go": "go",
+    "source.rust": "rust",
+    "source.lua": "lua",
+    "source.ruby": "ruby",
+    "source.java": "java",
+    "source.php": "php",
+    "embedding.php": "php",
+    "text.html.php": "php",
+    "source.zig": "zig",
+    "source.c": "c",
+    "source.c++": "cpp",
+    "source.cs": "c_sharp",
+    "source.scala": "scala",
+    "source.Kotlin": "kotlin",
+    "source.julia": "julia",
+    "source.haskell": "haskell",
+    "source.clojure": "clojure",
+    "source.elixir": "elixir",
+    "source.toml": "toml",
+    "source.yaml": "yaml",
+    "source.json": "json",
+    "source.shell": "bash",
+    "source.scheme": "query",
+    "text.html.vue": "vue",
+    "text.html.svelte": "svelte",
+    "source.sql": "sql",
+    "text.html.basic": "html",
+    "text.xml": "html",
+    "text.html.markdown": "markdown",
+    "source.erlang": "erlang",
+    "source.makefile": "make",
+    "source.dockerfile": "dockerfile",
+    "source.elm": "elm",
+    "source.perl": "perl",
+    "source.objc": "objc",
+    "source.r": "r",
+    "text.restructuredtext": "rst",
+    "source.ocaml": "ocaml",
+    "source.regexp": "regex",
+    "text.tex.latex": "latex",
+    "source.hcl": "hcl",
+    "source.terraform": "terraform",
+    "source.hack": "hack",
+}
+
+SCOPE_TO_QUERIES_NAME: dict[ScopeType, str] = {
+    **SCOPE_TO_LANGUAGE_NAME,
+    "source.ts.unittest": "typescript_test",
+    "source.tsx.unittest": "tsx_test",
 }
 
 
@@ -192,9 +193,7 @@ class RepoDict(TypedDict):
 LANGUAGE_NAME_TO_REPO: dict[str, RepoDict] = {
     "python": {"repo": "tree-sitter/tree-sitter-python"},
     "typescript": {"repo": "tree-sitter/tree-sitter-typescript", "parser_path": "typescript"},
-    "typescript_test": {"repo": "tree-sitter/tree-sitter-typescript", "parser_path": "typescript"},
     "tsx": {"repo": "tree-sitter/tree-sitter-typescript", "parser_path": "tsx"},
-    "tsx_test": {"repo": "tree-sitter/tree-sitter-typescript", "parser_path": "tsx"},
     "javascript": {"repo": "tree-sitter/tree-sitter-javascript"},
     "css": {"repo": "tree-sitter/tree-sitter-css"},
     "scss": {"repo": "serenadeai/tree-sitter-scss"},
@@ -265,24 +264,30 @@ def get_file_ignore_patterns(d: SettingsDict | None = None):
     return d.get("file_ignore_patterns", [])
 
 
-def get_language_name_to_scopes(d: SettingsDict | None = None):
+def get_scope_to_language_name(d: SettingsDict | None = None) -> dict[ScopeType, str]:
     d = d or get_settings_dict()
-    return {**LANGUAGE_NAME_TO_SCOPES, **d.get("language_name_to_scopes", {})}
+    return {**SCOPE_TO_LANGUAGE_NAME, **d.get("scope_to_language_name", {})}
+
+
+def get_scope_to_queries_name(d: SettingsDict | None = None) -> dict[ScopeType, str]:
+    d = d or get_settings_dict()
+    return {**SCOPE_TO_QUERIES_NAME, **d.get("scope_to_queries_name", {})}
+
+
+def get_language_name_to_scopes(d: SettingsDict | None = None):
+    scope_to_language_name = get_scope_to_language_name(d)
+    language_name_to_scopes: dict[str, list[ScopeType]] = {}
+    for scope, language in scope_to_language_name.items():
+        if language in language_name_to_scopes:
+            language_name_to_scopes[language].append(scope)
+        else:
+            language_name_to_scopes[language] = [scope]
+    return language_name_to_scopes
 
 
 def get_language_name_to_debounce_ms(d: SettingsDict | None = None):
     d = d or get_settings_dict()
     return d.get("language_name_to_debounce_ms", {})
-
-
-def get_scope_to_language_name(d: SettingsDict | None = None):
-    scope_to_language_name: dict[ScopeType, str] = {}
-
-    language_name_to_scopes = get_language_name_to_scopes(d)
-    for language_name, scopes in language_name_to_scopes.items():
-        for scope in scopes:
-            scope_to_language_name[scope] = language_name
-    return scope_to_language_name
 
 
 def get_language_name_to_repo(d: SettingsDict | None = None):

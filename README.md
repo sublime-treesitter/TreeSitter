@@ -12,7 +12,7 @@ It also has APIs with everything you need to build Sublime Text plugins for "str
 
 - Install `TreeSitter` from Package Control
 - See installed languages / install a new language with `TreeSitter: Install Language`
-    - `python`, `json`, `javascript`, `typescript` and a few others are installed by default
+    - `python`, `json`, `javascript`, `typescript`, `tsx`, and `markdown` are installed by default
 
 ## Overview
 
@@ -87,6 +87,15 @@ class MyTreeSitterListener(sublime_plugin.EventListener):
         if command == "tree_sitter_update_tree":
             print(get_tree_dict(args["buffer_id"]))
 ```
+
+### Scopes, languages, and queries files
+
+- A Sublime Text scope maps to a Tree-sitter language parser
+    - Different scopes with the same syntax use the same language parser
+    - E.g. `source.ts` and `source.ts.unittest` both use the `typescript` language parser
+- A scope also maps to a queries file
+    - Different scopes with the same syntax can map to different queries files
+    - This way the plugin can index different symbols in e.g. `.ts` and `.test.ts` files
 
 ### Manage your own language repos and binaries
 

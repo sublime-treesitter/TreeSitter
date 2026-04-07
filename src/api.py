@@ -20,7 +20,15 @@ from .core import (
     publish_tree_update,
     trim_cached_trees,
 )
-from .utils import PROJECT_ROOT, get_queries_path, get_scope_to_language_name, log, maybe_none, not_none
+from .utils import (
+    PROJECT_ROOT,
+    get_queries_path,
+    get_scope_to_language_name,
+    get_scope_to_queries_name,
+    log,
+    maybe_none,
+    not_none,
+)
 
 if TYPE_CHECKING:
     from tree_sitter import Node, Tree
@@ -97,9 +105,9 @@ def query_node_with_s(scope: str | None, node: Node, query_s: str):
 
 
 def get_query_s_from_file(
-    language_name: str,
+    queries_name: str,
     queries_path: str | Path = "",
-    query_file: str = SYMBOLS_FILE,
+    symbols_file: str = SYMBOLS_FILE,
     ignore_file_not_found: bool = False,
 ) -> str:
     """
@@ -111,9 +119,9 @@ def get_query_s_from_file(
     INHERITS_PREFIX = "; inherits:"
 
     queries_path = os.path.expanduser(queries_path or get_queries_path(mutable_settings.d))
-    path = Path(queries_path) / language_name / query_file
+    path = Path(queries_path) / queries_name / symbols_file
 
-    languages: list[str] = []
+    names: list[str] = []
     try:
         with open(path, "r") as f:
             query_s = f.read()
@@ -125,16 +133,16 @@ def get_query_s_from_file(
     else:
         for line in query_s.splitlines():
             if line.startswith(INHERITS_PREFIX):
-                languages = [lang.strip() for lang in line.split(INHERITS_PREFIX)[1].split(",") if lang]
+                names = [name.strip() for name in line.split(INHERITS_PREFIX)[1].split(",") if name]
 
     queries = [
         get_query_s_from_file(
-            language_name=lang,
+            queries_name=name,
             queries_path=queries_path,
-            query_file=query_file,
+            symbols_file=symbols_file,
             ignore_file_not_found=True,
         )
-        for lang in languages
+        for name in names
     ]
     return "\n".join([query_s, *queries])
 
@@ -942,16 +950,16 @@ class TreeSitterSelectSymbolsCommand(sublime_plugin.TextCommand):
         edit,
         region: tuple[int, int] | None = None,
         queries_path: str = "",
-        query_file: str = SYMBOLS_FILE,
+        symbols_file: str = SYMBOLS_FILE,
         ignore_file_not_found=True,
     ):
         if not (tree_dict := get_tree_dict(self.view.buffer_id())):
             return
 
         query_s = get_query_s_from_file(
-            language_name=get_scope_to_language_name(mutable_settings.d)[tree_dict["scope"]],
+            queries_name=get_scope_to_queries_name(mutable_settings.d)[tree_dict["scope"]],
             queries_path=queries_path or get_queries_path(mutable_settings.d),
-            query_file=query_file,
+            symbols_file=symbols_file,
             ignore_file_not_found=ignore_file_not_found,
         )
         if captures := get_captures_from_nodes([tree_dict["tree"].root_node], self.view, query_s=query_s):
@@ -977,16 +985,16 @@ class TreeSitterGotoSymbolCommand(sublime_plugin.TextCommand):
         edit,
         region: tuple[int, int] | None = None,
         queries_path: str = "",
-        query_file: str = SYMBOLS_FILE,
+        symbols_file: str = SYMBOLS_FILE,
         ignore_file_not_found=True,
     ):
         if not (tree_dict := get_tree_dict(self.view.buffer_id())):
             return self.fallback()
 
         query_s = get_query_s_from_file(
-            language_name=get_scope_to_language_name(mutable_settings.d)[tree_dict["scope"]],
+            queries_name=get_scope_to_queries_name(mutable_settings.d)[tree_dict["scope"]],
             queries_path=queries_path or get_queries_path(mutable_settings.d),
-            query_file=query_file,
+            symbols_file=symbols_file,
             ignore_file_not_found=ignore_file_not_found,
         )
         if captures := get_captures_from_nodes([tree_dict["tree"].root_node], self.view, query_s=query_s):

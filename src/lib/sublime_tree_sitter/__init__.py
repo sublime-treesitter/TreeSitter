@@ -4,7 +4,7 @@ Public-facing functions to interface with Tree-sitter, designed for use by other
 Example usage: `from sublime_tree_sitter import get_tree_dict`
 """
 
-from TreeSitter.src.api import (
+from TreeSitter.src.api import (  # type: ignore
     BreadcrumbDict,
     CaptureDict,
     contains,
@@ -34,11 +34,12 @@ from TreeSitter.src.api import (
     show_node_under_selection,
     walk_tree,
 )
-from TreeSitter.src.core import TreeDict
+from TreeSitter.src.core import TreeDict  # type: ignore
 
 __all__ = [
     "BreadcrumbDict",
     "CaptureDict",
+    "TreeDict",
     "contains",
     "format_breadcrumbs",
     "get_ancestor",
@@ -65,5 +66,4 @@ __all__ = [
     "scroll_to_region",
     "show_node_under_selection",
     "walk_tree",
-    "TreeDict",
 ]

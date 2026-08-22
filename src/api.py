@@ -172,10 +172,9 @@ def walk_tree(tree_or_node: Tree | Node, max_depth: int | None = None):
     while not reached_root:
         yield cursor.node, cursor
 
-        if max_depth is None or cursor.depth < max_depth:
+        if (max_depth is None or cursor.depth < max_depth) and cursor.goto_first_child():
             # Don't walk children if we've already reached `max_depth`
-            if cursor.goto_first_child():
-                continue
+            continue
 
         if cursor.goto_next_sibling():
             continue
@@ -211,9 +210,8 @@ def get_ancestors(node: Node, max_len: int | None = None) -> list[Node]:
     while current_node:
         nodes.append(current_node)
         current_node = current_node.parent
-        if max_len is not None:
-            if len(nodes) >= max_len:
-                break
+        if max_len is not None and len(nodes) >= max_len:
+            break
     return nodes
 
 
@@ -338,7 +336,7 @@ def get_descendant(region: sublime.Region, view: sublime.View) -> Node | None:
 
     node = get_node_spanning_region(region, view.buffer_id()) or tree_dict["tree"].root_node
     for desc, _ in walk_tree(node):
-        if get_size(desc) < get_size(node):
+        if get_size(not_none(desc)) < get_size(node):
             return desc
 
 
@@ -416,6 +414,7 @@ def get_cousins(
     cousins: list[Node] = []
     for cousin, cursor in walk_tree(ancestors[-1], max_depth=node_depth if same_depth else None):
         # Don't touch this code, it's optimized for performance
+        cousin = not_none(cousin)
         if same_depth and cursor.depth != node_depth:
             continue
         if same_text and cousin.text != node.text:
@@ -690,7 +689,7 @@ def format_node_text(text: str):
 
 
 def format_breadcrumbs(breadcrumbs: list[Node]):
-    return " > ".join(format_node_text(a.text.decode()) for a in reversed(breadcrumbs))
+    return " > ".join(format_node_text(not_none(a.text).decode()) for a in reversed(breadcrumbs))
 
 
 def format_capture_name(capture_name: str) -> str:
@@ -710,7 +709,7 @@ def goto_captures(captures: list[CaptureDict], view: sublime.View):
         breadcrumbs = capture["breadcrumbs"]
         options.append(
             sublime.QuickPanelItem(
-                trigger=f"{'. ' * len(breadcrumbs)}{format_node_text(capture['node'].text.decode())}",
+                trigger=f"{'. ' * len(breadcrumbs)}{format_node_text(not_none(capture['node'].text).decode())}",
                 kind=get_capture_kind(capture["name"]),
                 details=format_breadcrumbs([bc["node"] for bc in breadcrumbs]),
                 annotation=format_capture_name(capture["name"]),
@@ -806,7 +805,7 @@ def select_capture_name(captures: list[CaptureDict], options: list[sublime.Quick
     all_types_option = sublime.QuickPanelItem(trigger="All types", kind=(sublime.KindId.AMBIGUOUS, "", ""))
     capture_name_options: list[sublime.QuickPanelItem] = [all_types_option]
 
-    capture_names_list = sorted(list(capture_names))
+    capture_names_list = sorted(capture_names)
     for name in sorted(capture_names_list):
         option = sublime.QuickPanelItem(trigger=format_capture_name(name), kind=get_capture_kind(name))
         capture_name_options.append(option)
@@ -1061,7 +1060,9 @@ class TreeSitterPrintTreeCommand(sublime_plugin.TextCommand):
             while root_node.parent and get_size(root_node) == get_size(root_node.parent):
                 # Move to "shallowest" ancestor with the same size as node spanning region
                 root_node = root_node.parent
-            parts.extend([f"{indent * c.depth}{self.format_node(n, c.field_name)}" for n, c in walk_tree(root_node)])
+            parts.extend(
+                [f"{indent * c.depth}{self.format_node(not_none(n), c.field_name)}" for n, c in walk_tree(root_node)]
+            )
             parts.append("")
 
         name = get_view_name(self.view)

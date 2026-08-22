@@ -577,8 +577,8 @@ class TreeSitterTextChangeListener(sublime_plugin.TextChangeListener):
 #
 
 
-def get_instantiated_language_names():
-    return set(get_scope_to_language_name(mutable_settings.d)[scope] for scope in SCOPE_TO_LANGUAGE)
+def get_instantiated_language_names() -> set[str]:
+    return {get_scope_to_language_name(mutable_settings.d)[scope] for scope in SCOPE_TO_LANGUAGE}
 
 
 def remove_language(language: str):
@@ -598,13 +598,13 @@ class TreeSitterSelectLanguageMixin:
         Allow user to select from installed and uninstalled languages in quick panel. Render language for the active
         view's scope as first option.
         """
-        available_languages = sorted(list(get_language_name_to_scopes(mutable_settings.d).keys()))
+        available_languages = sorted(get_language_name_to_scopes(mutable_settings.d).keys())
         instantiated_languages = get_instantiated_language_names()
 
         view = self.window.active_view()
         scope = get_scope(view) if view else None
         scope_to_language_name = get_scope_to_language_name(mutable_settings.d)
-        active_language = scope_to_language_name[scope] if scope in scope_to_language_name else None
+        active_language = scope_to_language_name[scope] if scope in scope_to_language_name else None  # noqa: SIM401
 
         if active_language in available_languages:
             idx = available_languages.index(active_language)

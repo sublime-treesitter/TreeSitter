@@ -7,7 +7,7 @@ for module_name in [
     del sys.modules[module_name]
 
 
-from .src.api import (  # noqa: F401, E402
+from .src.api import (  # noqa: F401
     TreeSitterGotoSymbolCommand,
     TreeSitterOnSelectionModifiedListener,
     TreeSitterPrintTreeCommand,
@@ -21,12 +21,11 @@ from .src.api import (  # noqa: F401, E402
     TreeSitterShowNodeUnderSelectionCommand,
     TreeSitterToggleShowNodeUnderSelectionCommand,
 )
-from .src.core import (  # noqa: F401, E402
+from .src.core import (  # noqa: F401
     TreeSitterEventListener,
     TreeSitterInstallLanguageCommand,
     TreeSitterRemoveLanguageCommand,
     TreeSitterTextChangeListener,
-    TreeSitterUpdateLanguageCommand,
     TreeSitterUpdateTreeCommand,
     on_load,
 )

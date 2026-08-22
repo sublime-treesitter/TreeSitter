@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Iterable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Iterable, Literal, TypedDict, cast
+from typing import TYPE_CHECKING, Any, Literal, TypedDict, cast
 
 import sublime
 import sublime_plugin
@@ -86,22 +87,34 @@ def get_tree_from_code(scope: str, s: str | bytes):
 
     if not (validated_scope := check_scope(scope)):
         return None
-    parser = Parser()
-    parser.set_language(SCOPE_TO_LANGUAGE[validated_scope])
+    parser = Parser(SCOPE_TO_LANGUAGE[validated_scope])
     return parser.parse(s.encode() if isinstance(s, str) else s)
 
 
 def query_node_with_s(scope: str | None, node: Node, query_s: str):
     """
-    Query a node with `query_s`.
+    Query a node with `query_s`. Returns `(node, capture_name)` tuples, in the same document order in which their
+    matches were found, i.e. an ancestor's captures always come before its descendants'. This ordering is relied on by
+    `get_captures_from_nodes`, e.g. to build symbol breadcrumbs, since a node's breadcrumb ancestors must already have
+    been seen by the time the node itself is processed.
+
+    Note `QueryCursor.captures` doesn't preserve this ordering (it groups all captures by capture name), so we build
+    this list from `QueryCursor.matches` instead.
 
     See https://github.com/tree-sitter/py-tree-sitter#pattern-matching
     """
+    from tree_sitter import Query, QueryCursor
+
     if not (scope := check_scope(scope)):
         return
     language = SCOPE_TO_LANGUAGE[scope]
-    query = language.query(query_s)
-    return query.captures(node)
+    cursor = QueryCursor(Query(language, query_s))
+    return [
+        (captured_node, name)
+        for _, captures in cursor.matches(node)
+        for name, nodes in captures.items()
+        for captured_node in nodes
+    ]
 
 
 def get_query_s_from_file(

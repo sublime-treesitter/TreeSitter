@@ -11,6 +11,11 @@ It also has APIs with everything you need to build Sublime Text plugins for "str
 ## Installation
 
 - Install `TreeSitter` from Package Control
+- `TreeSitter` depends on [`tree_sitter`](https://github.com/tree-sitter/py-tree-sitter) and [`tree_sitter_language_pack`](https://github.com/xberg-io/tree-sitter-language-pack), which aren't installed as Package Control ["dependencies"](https://packagecontrol.io/docs/dependencies) yet (that requires a PR against [the Package Control channel](https://github.com/packagecontrol/channel)). Until then, install them yourself:
+    - Install [`uv`](https://docs.astral.sh/uv/getting-started/installation/)
+    - Run `uv sync` from this plugin's directory (`Preferences: Browse Packages`, then `TreeSitter`)
+    - Run `TreeSitter: Reload Plugin` from the command palette
+    - If `tree_sitter_language_pack` still isn't importable, `TreeSitter` logs a status bar message telling you to redo this step
 - See installed languages / install a new language with `TreeSitter: Install Language`
     - `python`, `json`, `javascript`, `typescript`, `tsx`, and `markdown` are installed by default
 
@@ -97,18 +102,21 @@ class MyTreeSitterListener(sublime_plugin.EventListener):
     - Different scopes with the same syntax can map to different queries files
     - This way the plugin can index different symbols in e.g. `.ts` and `.test.ts` files
 
-### Manage your own language repos and binaries
+### Languages
 
-`TreeSitter` ships with pre-built language binaries from [the `tree_sitter_languages` package](https://github.com/grantjenks/py-tree-sitter-languages). If you want to use languages or language versions not in this package, `TreeSitter` can clone language repos and build binaries for you.
+`TreeSitter` gets language parsers from [`tree_sitter_language_pack`](https://github.com/xberg-io/tree-sitter-language-pack), which bundles ~370 languages. It downloads and caches the precompiled parser for a language the first time it's used (this can take a moment and needs network access), then reuses the cached copy from then on.
 
-To enable this (and disable languages bundled in `tree_sitter_languages`), go to `TreeSitter: Settings` from the command palette, and set `python_path` to an external Python 3.8 executable with a working C compiler, so it can call [`Language.build_library`](https://github.com/tree-sitter/py-tree-sitter/blob/565f1654d1849e966c77326e11e65ba6ef530feb/tree_sitter/__init__.py#L63).
-
-If you use Linux or MacOS, an easy way to get Python 3.8 [is with pyenv](https://github.com/pyenv/pyenv).
+`SCOPE_TO_LANGUAGE_NAME` in [`src/utils.py`](./src/utils.py) only maps a curated subset of these languages to Sublime scopes out of the box. To add a scope for a language `tree_sitter_language_pack` supports but this plugin doesn't map yet, add it to `scope_to_language_name` in `TreeSitter: Settings` — see [the full list of supported language names](https://github.com/xberg-io/tree-sitter-language-pack/blob/main/packages/python/README.md).
 
 ## Limitations
 
 - Doesn't support nested syntax trees, e.g. JS code in `<script>` tags in HTML docs
 - Only supports source code encoded with ASCII / UTF-8 (Tree-sitter also supports UTF-16)
+
+## Development
+
+- Run `uv sync`
+- Run tests with `uv run pytest`. These test parsing, querying, and tree-walking directly (with `tree_sitter` and `tree_sitter_language_pack`, no Sublime instance needed)
 
 ## License
 

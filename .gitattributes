@@ -5,5 +5,5 @@
 
 # unittests
 pre-push                export-ignore
-pyrightconfig-ci.json   export-ignore
+pyrightconfig.json      export-ignore
 ruff.toml               export-ignore

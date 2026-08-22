@@ -1,0 +1,18 @@
+[project]
+name = "sublime-tree-sitter"
+version = "0.1.0"
+requires-python = ">=3.14"
+dependencies = [
+    "tree-sitter==0.26.0",
+    "tree-sitter-language-pack==1.14.3",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "sublime-text-stubs==1.4200.*",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

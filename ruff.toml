@@ -1,3 +1,4 @@
-lint.select = ["F", "E", "W", "B", "ERA", "I001"]
-
 line-length = 120
+
+[lint]
+ignore = ["BLE001"]

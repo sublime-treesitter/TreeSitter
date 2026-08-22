@@ -10,20 +10,16 @@ TreeSitter does the following:
 
 - Installs Tree-sitter Python bindings, see https://github.com/tree-sitter/py-tree-sitter
     - Importable by other plugins with `import tree_sitter`
-- Installs and builds Tree-sitter languages, e.g. https://github.com/tree-sitter/tree-sitter-python, based on settings
-    - Also installs and updates languages on command
+- Instantiates Tree-sitter languages on demand from https://github.com/xberg-io/tree-sitter-language-pack, which
+  downloads and caches precompiled parsers for ~370 languages, based on settings
 - Provides APIs for a bunch of stuff (see more in README)
 
 It's easy to build Tree-sitter plugins on top of this one, for "structural" editing, selection, navigation, code
 folding, symbol maps… See e.g. https://zed.dev/blog/syntax-aware-editing for ideas. It's performant and doesn't block
 the main thread.
 
-This plugin ships with language binaries bundled in `tree_sitter_languages`. If users want to clone their own language
-repos and build their own binaries, they can set `python_path` to an external Python 3.8 executable. The Python that
-ships with Sublime Text is not suitable for building language binaries:
-
-- Calling `build_library` raises e.g. `ModuleNotFoundError: No module named '_sysconfigdata__darwin_darwin'`
-- This module is built dynamically, and doesn't exist in Python bundled with Sublime Text
+`tree_sitter` and `tree_sitter_language_pack` aren't installed as Package Control "dependencies" yet (see README), so
+they need to be installed with `uv sync`, run from this plugin's directory, before this plugin can do anything.
 
 It has the following limitations:
 
@@ -36,13 +32,9 @@ It has the following limitations:
 
 from __future__ import annotations
 
-import os
 import re
-import subprocess
 import time
 from dataclasses import dataclass
-from pathlib import Path
-from shutil import rmtree
 from threading import Thread
 from typing import TYPE_CHECKING, TypedDict, cast
 
@@ -51,8 +43,7 @@ import sublime_plugin
 from sublime import View
 
 from .utils import (
-    BUILD_PATH,
-    BUILD_PY_PATH,
+    DEPS_PATH,
     LIB_PATH,
     SETTINGS_FILENAME,
     ScopeType,
@@ -61,8 +52,6 @@ from .utils import (
     get_debug,
     get_file_ignore_patterns,
     get_language_name_to_debounce_ms,
-    get_language_name_to_parser_path,
-    get_language_name_to_repo,
     get_language_name_to_scopes,
     get_scope_to_language_name,
     get_settings,
@@ -91,8 +80,10 @@ SCOPE_TO_LANGUAGE: dict[ScopeType, Language] = {}
 # LRU cache, dict of `(buffer_id, syntax)` tuple keys pointing to dict with tree instance and other metadata.
 BUFFER_ID_TO_TREE: dict[int, TreeDict] = {}
 
-# These need to be added to plugin host's `sys.path` before other plugins that depend on them load
+# These need to be added to plugin host's `sys.path` before other plugins that depend on them load, and before
+# `tree_sitter`/`tree_sitter_language_pack` are imported
 add_path(str(LIB_PATH))
+add_path(str(DEPS_PATH))
 
 
 class TreeDict(TypedDict):
@@ -109,7 +100,7 @@ class TreeDict(TypedDict):
 
 def on_update_settings():
     """
-    Reinstantiate languages in case `python_path` setting updated.
+    Reinstantiate languages in case `installed_languages` setting updated.
 
     If there's an easier way to check whether plugin settings have changed I'd love to know what it is!
     """
@@ -118,12 +109,10 @@ def on_update_settings():
     mutable_settings.d = settings_dict
 
     if previous_settings_dict is not None:
-        python_path_changed = previous_settings_dict.get("python_path") != settings_dict.get("python_path")
         installed_languages_changed = set(previous_settings_dict.get("installed_languages")) != set(
             settings_dict.get("installed_languages")
         )
-        if python_path_changed or installed_languages_changed:
-            instantiate_languages()
+        if installed_languages_changed:
             Thread(target=install_languages).start()
 
 
@@ -132,139 +121,41 @@ def on_load():
     Called in `plugin_loaded` in `load.py`. Called after plugin is loaded (we can use functions like
     `sublime.load_settings`), but before events fired.
 
-    We load any uncloned or unbuilt languages in the background, and if a language needed to parse the active view was
-    just installed, we parse this view when we're finished.
+    We load any uninstantiated languages in the background, and if a language needed to parse the active view was just
+    installed, we parse this view when we're finished.
     """
-    try:
-        # Ensure "build path" exists for users managing their own languages
-        os.makedirs(BUILD_PATH)
-    except FileExistsError:
-        pass
-
     settings = get_settings()
     mutable_settings.d = cast(SettingsDict, settings.to_dict())
     settings.clear_on_change("TreeSitter")
     settings.add_on_change("TreeSitter", on_update_settings)
 
-    if not get_settings_dict().get("python_path"):
-        log("`python_path` not set, using language binaries bundled with tree_sitter_languages")
-    else:
-        log(f'`python_path` set, language repos and .so files installed at "{BUILD_PATH}"')
-
-    instantiate_languages()
+    # Only instantiate languages already downloaded and cached by `tree_sitter_language_pack` on a previous run, so
+    # plugin load never blocks the main thread on network I/O. `install_languages`, run in a background thread right
+    # after, downloads and instantiates anything still missing.
+    instantiate_languages(only_downloaded=True)
     Thread(target=install_languages).start()
 
 
-def clone_language(org_and_repo: str, branch: str = ""):
+def instantiate_languages(only_downloaded: bool = False):
     """
-    Clone repo, and if `branch` is specified, `cd` into repo and run `git checkout <branch>`.
+    Instantiate `Language`s with `tree_sitter_language_pack`, and put them in `SCOPE_TO_LANGUAGE`. `get_language`
+    downloads and caches a language's precompiled parser the first time it's called, so this can block on network I/O;
+    pass `only_downloaded=True` to skip languages not already cached on disk, e.g. when calling from the main thread.
     """
-    _, repo = org_and_repo.split("/")
-    repo_path = str(BUILD_PATH / repo)
-    subprocess.run(["git", "clone", f"https://github.com/{org_and_repo}", repo_path], check=True)
-
-    if branch:
-        # TODO: this shouldn't be called here, because then it's never called if `git clone` fails
-        subprocess.run(["git", "checkout", branch], cwd=repo_path, check=True)
-
-
-def get_so_file(language_name: str):
-    return f"language-{language_name}.so"
-
-
-def clone_languages():
-    """
-    Clone language repos from which language `.so` files can be built.
-
-    This function is NOOP if `python_path` not set.
-    """
-    settings_dict = get_settings_dict()
-    if not settings_dict.get("python_path"):
-        # Rely instead on language binaries bundled with tree_sitter_languages
-        return
-
-    language_names = settings_dict["installed_languages"]
-    files = set(f for f in os.listdir(BUILD_PATH))
-    language_name_to_repo = get_language_name_to_repo(mutable_settings.d)
-
-    for name in set(language_names):
-        if name not in language_name_to_repo:
-            log(f'"{name}" language is not supported, read more at {PROJECT_REPO}')
-            continue
-
-        repo_dict = language_name_to_repo[name]
-        org_and_repo = repo_dict["repo"]
-        _, repo = org_and_repo.split("/")
-        if repo in files:
-            # We've already cloned this repo
-            continue
-
-        log_s = f"installing {org_and_repo} repo for {name} language"
-        if branch := repo_dict.get("branch", ""):
-            log_s = f"{log_s}, and checking out {branch}"
-        log(log_s, with_status=True)
-        clone_language(org_and_repo, branch=repo_dict.get("branch", ""))
-        files.add(repo)  # Avoid cloning a repo used for multiple languages multiple times
-
-
-def build_languages():
-    """
-    Build missing language `.so` files for installed languages. We use python 3.8 executable to build languages, because
-    the python bundled with Sublime can't do this.
-
-    This function is NOOP if `python_path` not set, in which case we rely on bundled `tree_sitter_languages`.
-
-    Note: `installed_languages` specified in `TreeSitter.sublime-settings`, `python` and `json` installed by default.
-    """
-    settings_dict = get_settings_dict()
-    if not (python_path := settings_dict.get("python_path")):
-        # Rely instead on language binaries bundled with tree_sitter_languages
-        return
-
-    language_names = settings_dict["installed_languages"]
-
-    pip_path = settings_dict.get("pip_path")
-    if not pip_path:
-        head, _ = os.path.split(python_path)
-        pip_path = str(Path(head) / "pip")
-
-    files = set(f for f in os.listdir(BUILD_PATH))
-    language_name_to_parser_path = get_language_name_to_parser_path(mutable_settings.d)
-
-    for name in set(language_names):
-        if (so_file := get_so_file(name)) in files:
-            # We've already built this .so file
-            continue
-
-        if name not in language_name_to_parser_path:
-            continue
-
-        path = language_name_to_parser_path[name]
-        log(f"building {name} language from files at {path}", with_status=True)
-        subprocess.run(
-            [
-                os.path.expanduser(python_path),
-                str(BUILD_PY_PATH),
-                os.path.expanduser(pip_path),
-                str(BUILD_PATH / path),
-                str(BUILD_PATH / so_file),
-            ],
-            check=True,
+    try:
+        from tree_sitter_language_pack import downloaded_languages, get_language
+    except ImportError:
+        log(
+            "`tree_sitter_language_pack` isn't installed: run `uv sync` from this plugin's directory, then run "
+            "`TreeSitter: Reload Plugin`",
+            with_status=True,
         )
-
-
-def instantiate_languages():
-    """
-    Instantiate `Language`s from language binaries, and put them in `SCOPE_TO_LANGUAGE`. This takes about 0.1ms for 2
-    languages on my machine.
-    """
-    from tree_sitter import Language
-    from tree_sitter_languages import get_language
+        return
 
     settings_dict = get_settings_dict()
-    python_path = settings_dict.get("python_path")
     language_names = settings_dict["installed_languages"]
     language_name_to_scopes = get_language_name_to_scopes(mutable_settings.d)
+    cached_language_names = set(downloaded_languages()) if only_downloaded else None
 
     for name in set(language_names):
         if name not in language_name_to_scopes:
@@ -274,19 +165,14 @@ def instantiate_languages():
         if all(scope in SCOPE_TO_LANGUAGE for scope in language_name_to_scopes[name]):
             continue
 
-        language: Language | None = None
-        if python_path:
-            files = set(f for f in os.listdir(BUILD_PATH))
-            if (so_file := get_so_file(name)) not in files:
-                continue
+        if cached_language_names is not None and name not in cached_language_names:
+            continue
 
-            language = Language(str(BUILD_PATH / so_file), name)
-        else:
-            try:
-                language = cast(Language, get_language(name))
-            except Exception:
-                log(f"language `{name}` not bundled with `tree_sitter_languages`, see `python_path` setting in README")
-                continue
+        try:
+            language = get_language(name)
+        except Exception as e:
+            log(f'"{name}" language not available from tree_sitter_language_pack, read more at {PROJECT_REPO}: {e}')
+            continue
 
         for scope in language_name_to_scopes[name]:
             SCOPE_TO_LANGUAGE[scope] = language
@@ -427,7 +313,7 @@ def edit(
     Note that Sublime serializes text changes s.t. that they can be applied as is and in order, even if text is replaced
     and/or there are multiple selections.
     """
-    parser.set_language(SCOPE_TO_LANGUAGE[scope])
+    parser.language = SCOPE_TO_LANGUAGE[scope]
 
     changed_s = s
     for idx, change in enumerate(changes):
@@ -443,9 +329,9 @@ def edit(
 
 def parse(parser: Parser, scope: ScopeType, s: str) -> Tree:
     """
-    Note: the `set_language` call costs nothing, I can call it 2 million times a second on 2021 M1 MPB with 16gb RAM.
+    Note: setting `parser.language` costs nothing, I can do it 2 million times a second on 2021 M1 MPB with 16gb RAM.
     """
-    parser.set_language(SCOPE_TO_LANGUAGE[scope])
+    parser.language = SCOPE_TO_LANGUAGE[scope]
     return parser.parse(s.encode())
 
 
@@ -519,21 +405,17 @@ def parse_view(parser: Parser, view: View, view_text: str, publish_update: bool 
 
 def install_languages():
     """
-    - Clones language repos, and builds .so files on disk
-    - Instantiates `Language` instance and adds it to `SCOPE_TO_LANGUAGE`
+    Downloads (if needed) and instantiates `Language`s for `installed_languages`, and adds them to `SCOPE_TO_LANGUAGE`.
 
     Defined as a function so it can all be run in a thread on `plugin_loaded`.
 
-    Idempotent. Also, doesn't reclone/rebuild/reinstantiate languages that have been cloned/built/instantiated.
+    Idempotent. Also, doesn't redownload/reinstantiate languages that have already been downloaded/instantiated.
     """
     from tree_sitter import Parser
 
-    clone_languages()
-    build_languages()
     instantiate_languages()
-    if view := sublime.active_window().active_view():
-        if view.buffer().id() not in BUFFER_ID_TO_TREE:
-            parse_view(Parser(), view, get_view_text(view), publish_update=False)
+    if (view := sublime.active_window().active_view()) and view.buffer().id() not in BUFFER_ID_TO_TREE:
+        parse_view(Parser(), view, get_view_text(view), publish_update=False)
 
 
 class TreeSitterUpdateTreeCommand(sublime_plugin.WindowCommand):
@@ -701,24 +583,9 @@ def get_instantiated_language_names():
 
 def remove_language(language: str):
     """
-    - Remove language repo and .so file from disk
-    - Remove `Language` instance from `SCOPE_TO_LANGUAGE`
+    Remove `Language` instance from `SCOPE_TO_LANGUAGE`. Doesn't touch `tree_sitter_language_pack`'s on-disk cache,
+    which is shared across all languages and safe to leave in place.
     """
-    if get_settings_dict().get("python_path"):
-        repo_dict = get_language_name_to_repo(mutable_settings.d).get(language)
-        if repo_dict:
-            _, repo = repo_dict["repo"].split("/")
-            try:
-                rmtree(BUILD_PATH / repo)
-            except Exception as e:
-                log(f"error removing {repo} for {language}: {e}")
-
-        so_file = get_so_file(language)
-        try:
-            os.remove(BUILD_PATH / so_file)
-        except Exception as e:
-            log(f"error removing {so_file} for {language}: {e}")
-
     for scope in get_language_name_to_scopes(mutable_settings.d).get(language, []):
         SCOPE_TO_LANGUAGE.pop(scope, None)
 
@@ -780,7 +647,7 @@ class TreeSitterInstallLanguageCommand(TreeSitterSelectLanguageMixin, sublime_pl
 class TreeSitterRemoveLanguageCommand(TreeSitterSelectLanguageMixin, sublime_plugin.WindowCommand):
     """
     - Remove a language from `"installed_languages"` in settings
-    - Remove language from disk and from `SCOPE_TO_LANGUAGE`
+    - Remove language from `SCOPE_TO_LANGUAGE`
     """
 
     def on_select(self, idx: int):
@@ -797,22 +664,3 @@ class TreeSitterRemoveLanguageCommand(TreeSitterSelectLanguageMixin, sublime_plu
         settings.set("installed_languages", languages)
         sublime.save_settings(SETTINGS_FILENAME)
         Thread(target=lambda lang=language: remove_language(lang)).start()
-
-
-class TreeSitterUpdateLanguageCommand(TreeSitterSelectLanguageMixin, sublime_plugin.WindowCommand):
-    """
-    - Remove language from disk and from `SCOPE_TO_LANGUAGE`, without changing settings
-    - Reinstall it with `install_languages`
-    """
-
-    def on_select(self, idx: int):
-        if idx < 0:
-            return
-
-        language = self.languages[idx]
-
-        def remove_and_reinstall_language():
-            remove_language(language)
-            install_languages()
-
-        Thread(target=remove_and_reinstall_language).start()

@@ -24,7 +24,7 @@
                   "zig",
                   "c",
                   "cpp",
-                  "c_sharp",
+                  "csharp",
                   "scala",
                   "kotlin",
                   "julia",
@@ -39,6 +39,7 @@
                   "vue",
                   "svelte",
                   "html",
+                  "xml",
                   "markdown",
                   "sql",
                   "ocaml",
@@ -59,14 +60,6 @@
               },
               "markdownDescription": "Run `TreeSitter: Install Language` to install languages"
             },
-            "python_path": {
-              "type": "string",
-              "markdownDescription": "Path to Python 3.8 executable; set this to clone your own language repos and build your own language binaries instead of relying on those bundled with `tree_sitter_languages`"
-            },
-            "pip_path": {
-              "type": "string",
-              "markdownDescription": "If `python_path` is set, set this to corresponding path for `pip`; inferred from `python_path` if left blank"
-            },
             "scope_to_language_name": {
               "type": "object",
               "patternProperties": {
@@ -80,22 +73,6 @@
                 ".*": { "type": "string" }
               },
               "markdownDescription": "Override or extend which which queries to use for which Sublime Text scope"
-            },
-            "language_name_to_repo": {
-              "type": "object",
-              "patternProperties": {
-                ".*": {
-                  "type": "object",
-                  "properties": {
-                    "repo": { "type": "string" },
-                    "branch": { "type": "string" },
-                    "parser_path": { "type": "string" }
-                  },
-                  "additionalProperties": false,
-                  "required": ["repo"]
-                }
-              },
-              "markdownDescription": "Override or extend lookup dict with Tree-sitter grammar repos, see [src/utils.py](https://github.com/sublime-treesitter/TreeSitter/blob/main/src/utils.py)"
             },
             "language_name_to_debounce_ms": {
               "type": "object",

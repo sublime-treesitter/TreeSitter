@@ -2,6 +2,7 @@
 
 # Run from root of repo: `cd .git/hooks && ln -s -f ../../pre-push`
 
-ruff check src load.py
-ruff format --check src load.py
+ruff check src load.py tests
+ruff format --check src load.py tests
 pyright src load.py
+uv run pytest

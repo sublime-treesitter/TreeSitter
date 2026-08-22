@@ -16,8 +16,12 @@ It also has APIs with everything you need to build Sublime Text plugins for "str
     - Run `uv sync` from this plugin's directory (`Preferences: Browse Packages`, then `TreeSitter`)
     - Run `TreeSitter: Reload Plugin` from the command palette
     - If `tree_sitter_language_pack` still isn't importable, `TreeSitter` logs a status bar message telling you to redo this step
-- See installed languages / install a new language with `TreeSitter: Install Language`
-    - `python`, `json`, `javascript`, `typescript`, `tsx`, and `markdown` are installed by default
+
+### Installed languages
+
+The `installed_languages` setting controls which Sublime scopes `TreeSitter` actively parses and tracks. This doesn't control which languages are available; `tree_sitter_language_pack` can fetch and cache the parser for any of its languages on demand, whether or not it's in this list. Languages injected into another language's syntax tree are always resolved on demand regardless of this setting. 
+
+Run `TreeSitter: Install Language` / `TreeSitter: Remove Language` to manage this list, and see more in [Languages](#languages) below.
 
 ## Overview
 
@@ -108,11 +112,11 @@ class MyTreeSitterListener(sublime_plugin.EventListener):
 
 `SCOPE_TO_LANGUAGE_NAME` in [`src/utils.py`](./src/utils.py) only maps a curated subset of these languages to Sublime scopes out of the box. To add a scope for a language `tree_sitter_language_pack` supports but this plugin doesn't map yet, add it to `scope_to_language_name` in `TreeSitter: Settings`. Your mapping is merged with the default mapping.
 
-### Nested languages (injections)
+#### Nested languages (injections)
 
 Some languages embed others, e.g. Python in a Markdown fenced code block, JS/CSS in an HTML `<script>`/`<style>` tag, or Markdown's own inline content (implemented as two languages, `markdown` and `markdown_inline`, joined by an injection). `TreeSitter` discovers and parses these using each grammar's own bundled `injections.scm` via `tree_sitter_language_pack.get_injections_query`. This is the same mechanism editors like Neovim and Helix use. See `core.compute_injections`.
 
-Point/region lookups (`get_node_spanning_region` and everything built on it: select ancestor/sibling/cousin/descendant, goto/select symbol) don't descend into injected trees yet.
+`get_node_spanning_region` and everything built on it (select ancestor/sibling/descendant, show node under selection) descends into injected trees. `get_cousins` doesn't. Symbol queries (goto/select/query symbol) don't search injected trees yet either: that requires resolving a different queries file per injected language, not just crossing a tree boundary.
 
 ## Limitations
 

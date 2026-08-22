@@ -41,6 +41,7 @@ def _install_sublime_stubs():
     sublime.View = View  # type: ignore[attr-defined]
     sublime.KindId = KindId  # type: ignore[attr-defined]
     sublime.Kind = tuple  # type: ignore[attr-defined]  # only ever used as a type annotation
+    sublime.active_window = lambda: None  # type: ignore[attr-defined]  # tests override this when they need a view
 
     for name in ("ApplicationCommand", "EventListener", "TextCommand", "WindowCommand", "TextChangeListener"):
         setattr(sublime_plugin, name, type(name, (), {}))

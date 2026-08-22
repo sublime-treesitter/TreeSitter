@@ -209,6 +209,40 @@ LANGUAGE_NAME_TO_INJECTIONS_QUERY: dict[str, Query | None] = {}
 # usually has no Sublime scope of its own (e.g. `markdown_inline`), and needn't be in `installed_languages`.
 LANGUAGE_NAME_TO_INJECTED_LANGUAGE: dict[str, Language] = {}
 
+# Injected language names with a download in flight on a background thread, so a run of `only_downloaded=True` calls
+# (e.g. one per keystroke, all missing the same injected language) doesn't spawn a redundant thread per call.
+INJECTED_LANGUAGES_DOWNLOADING: set[str] = set()
+
+
+def download_injected_language_in_background(name: str):
+    """
+    Fetch and cache injected language `name` on a background thread, then reparse the active view so it picks up
+    whatever injection was waiting on it. Used when `get_injected_language(only_downloaded=True)` finds a language
+    that isn't cached yet: rather than requiring the user to explicitly install a language they merely encountered
+    (e.g. in a Markdown fenced code block), fetch it once in the background, the same as any other on-demand language.
+    """
+    if name in INJECTED_LANGUAGES_DOWNLOADING:
+        return
+    INJECTED_LANGUAGES_DOWNLOADING.add(name)
+
+    def download():
+        try:
+            from tree_sitter import Parser
+            from tree_sitter_language_pack import get_language
+
+            LANGUAGE_NAME_TO_INJECTED_LANGUAGE[name] = get_language(name)
+        except Exception as e:
+            log(f'"{name}" injected language download failed: {e}')
+            return
+        finally:
+            # If thread somehow dies before it gets here, this language won't download until ST is restarted; this is OK
+            INJECTED_LANGUAGES_DOWNLOADING.discard(name)
+
+        if (window := sublime.active_window()) and (view := window.active_view()):
+            parse_view(Parser(), view, get_view_text(view))
+
+    Thread(target=download).start()
+
 
 def get_injections_query(language: Language, language_name: str) -> Query | None:
     """
@@ -243,7 +277,8 @@ def get_injected_language(name: str, only_downloaded: bool) -> tuple[str, Langua
 
     `get_language` downloads and caches a language's precompiled parser the first time it's called, so this can block
     on network I/O; pass `only_downloaded=True` to skip languages not already cached on disk, e.g. when calling from
-    the main thread.
+    the main thread. In that case, a language that isn't cached yet is fetched on a background thread instead (see
+    `download_injected_language_in_background`), so it's available next time without the user installing anything.
     """
     from tree_sitter_language_pack import (
         detect_language_from_extension,
@@ -260,6 +295,7 @@ def get_injected_language(name: str, only_downloaded: bool) -> tuple[str, Langua
         return resolved_name, LANGUAGE_NAME_TO_INJECTED_LANGUAGE[resolved_name]
 
     if only_downloaded and resolved_name not in downloaded_languages():
+        download_injected_language_in_background(resolved_name)
         return None
 
     try:
@@ -585,7 +621,11 @@ def install_languages():
     from tree_sitter import Parser
 
     instantiate_languages()
-    if (view := sublime.active_window().active_view()) and view.buffer().id() not in BUFFER_ID_TO_TREE:
+    if (
+        (window := sublime.active_window())
+        and (view := window.active_view())
+        and view.buffer().id() not in BUFFER_ID_TO_TREE
+    ):
         parse_view(Parser(), view, get_view_text(view), publish_update=False)
 
 

@@ -58,7 +58,7 @@
                   "hack"
                 ]
               },
-              "markdownDescription": "Run `TreeSitter: Install Language` to install languages"
+              "markdownDescription": "Which Sublime scopes TreeSitter actively parses and tracks, not which languages are available: `tree_sitter_language_pack` can fetch and cache any of its languages on demand regardless of this list. Run `TreeSitter: Install Language` / `TreeSitter: Remove Language` to manage this list"
             },
             "scope_to_language_name": {
               "type": "object",

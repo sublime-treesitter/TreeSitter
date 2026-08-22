@@ -34,6 +34,8 @@ from .utils import (
 if TYPE_CHECKING:
     from tree_sitter import Node, Tree
 
+    from .core import Injection
+
 SYMBOLS_FILE = "symbols.scm"
 
 #
@@ -63,7 +65,10 @@ def get_tree_dict(buffer_id: int):
         from tree_sitter import Parser
 
         view_text = get_view_text(view)
-        BUFFER_ID_TO_TREE[buffer_id] = make_tree_dict(parse(Parser(), scope, view_text), view_text, scope)
+        # `get_tree_dict` can be called synchronously from a command on the main thread; we pass `only_downloaded=True`
+        # to ensure computing injections doesn't block on network I/O for a not-yet-cached injected language
+        tree = parse(Parser(), scope, view_text)
+        BUFFER_ID_TO_TREE[buffer_id] = make_tree_dict(tree, view_text, scope, only_downloaded=True)
         trim_cached_trees()
         publish_tree_update(view.window(), buffer_id=buffer_id, scope=scope)
 
@@ -187,6 +192,40 @@ def walk_tree(tree_or_node: Tree | Node, max_depth: int | None = None):
 
             if cursor.goto_next_sibling():
                 retracing = False
+
+
+def format_injected_tree(
+    root_node: Node,
+    injections: list[Injection],
+    format_node,
+    indent: str,
+    depth_offset: int = 0,
+) -> list[str]:
+    """
+    Render `root_node`'s tree as indented lines with `format_node(node, field_name)`, one per node, splicing in each
+    injected tree in `injections` (see `core.compute_injections`) right after the node it was injected into.
+
+    Used by `TreeSitterPrintTreeCommand`. Only descends into `injections`, not arbitrarily deep matching: a node from
+    `root_node`'s tree is spliced only if its byte range exactly matches an injected tree's root node, i.e. an
+    `@injection.content` node, not any node contained within one.
+    """
+    injection_by_range = {(inj["tree"].root_node.start_byte, inj["tree"].root_node.end_byte): inj for inj in injections}
+
+    lines: list[str] = []
+    for n, cursor in walk_tree(root_node):
+        node = not_none(n)
+        depth = cursor.depth + depth_offset
+        lines.append(f"{indent * depth}{format_node(node, cursor.field_name)}")
+
+        if injection := injection_by_range.get((node.start_byte, node.end_byte)):
+            lines.append(f"{indent * (depth + 1)}[injected: {injection['language_name']}]")
+            lines.extend(
+                format_injected_tree(
+                    injection["tree"].root_node, injection["children"], format_node, indent, depth_offset=depth + 2
+                )
+            )
+
+    return lines
 
 
 def descendant_for_byte_range(node: Node, start_byte: int, end_byte: int) -> Node | None:
@@ -1060,9 +1099,7 @@ class TreeSitterPrintTreeCommand(sublime_plugin.TextCommand):
             while root_node.parent and get_size(root_node) == get_size(root_node.parent):
                 # Move to "shallowest" ancestor with the same size as node spanning region
                 root_node = root_node.parent
-            parts.extend(
-                [f"{indent * c.depth}{self.format_node(not_none(n), c.field_name)}" for n, c in walk_tree(root_node)]
-            )
+            parts.extend(format_injected_tree(root_node, tree_dict["injections"], self.format_node, indent))
             parts.append("")
 
         name = get_view_name(self.view)

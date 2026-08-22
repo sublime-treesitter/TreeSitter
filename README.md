@@ -106,11 +106,16 @@ class MyTreeSitterListener(sublime_plugin.EventListener):
 
 `TreeSitter` gets language parsers from [`tree_sitter_language_pack`](https://github.com/xberg-io/tree-sitter-language-pack), which bundles ~370 languages. It downloads and caches the precompiled parser for a language the first time it's used (this can take a moment and needs network access), then reuses the cached copy from then on.
 
-`SCOPE_TO_LANGUAGE_NAME` in [`src/utils.py`](./src/utils.py) only maps a curated subset of these languages to Sublime scopes out of the box. To add a scope for a language `tree_sitter_language_pack` supports but this plugin doesn't map yet, add it to `scope_to_language_name` in `TreeSitter: Settings` — see [the full list of supported language names](https://github.com/xberg-io/tree-sitter-language-pack/blob/main/packages/python/README.md).
+`SCOPE_TO_LANGUAGE_NAME` in [`src/utils.py`](./src/utils.py) only maps a curated subset of these languages to Sublime scopes out of the box. To add a scope for a language `tree_sitter_language_pack` supports but this plugin doesn't map yet, add it to `scope_to_language_name` in `TreeSitter: Settings`. Your mapping is merged with the default mapping.
+
+### Nested languages (injections)
+
+Some languages embed others, e.g. Python in a Markdown fenced code block, JS/CSS in an HTML `<script>`/`<style>` tag, or Markdown's own inline content (implemented as two languages, `markdown` and `markdown_inline`, joined by an injection). `TreeSitter` discovers and parses these using each grammar's own bundled `injections.scm` via `tree_sitter_language_pack.get_injections_query`. This is the same mechanism editors like Neovim and Helix use. See `core.compute_injections`.
+
+Point/region lookups (`get_node_spanning_region` and everything built on it: select ancestor/sibling/cousin/descendant, goto/select symbol) don't descend into injected trees yet.
 
 ## Limitations
 
-- Doesn't support nested syntax trees, e.g. JS code in `<script>` tags in HTML docs
 - Only supports source code encoded with ASCII / UTF-8 (Tree-sitter also supports UTF-16)
 
 ## Development

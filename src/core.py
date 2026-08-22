@@ -21,10 +21,12 @@ the main thread.
 `tree_sitter` and `tree_sitter_language_pack` aren't installed as Package Control "dependencies" yet (see README), so
 they need to be installed with `uv sync`, run from this plugin's directory, before this plugin can do anything.
 
+It supports nested syntax trees ("injections"), e.g. JS code in `<script>` tags in HTML docs, or code in fenced
+Markdown code blocks: see `compute_injections` below. Point/region lookups (`get_node_spanning_region` and everything
+built on it: select ancestor/sibling/cousin/descendant, goto/select symbol) don't descend into injected trees yet.
+
 It has the following limitations:
 
-- It doesn't support nested syntax trees, e.g. JS code in `<script>` tags in HTML docs
-    - Ideas on how to do this: https://www.gnu.org/software/emacs/manual/html_node/elisp/Multiple-Languages.html
 - It only supports source code encoded with ASCII / UTF-8 (Tree-sitter also supports UTF-16)
 - Due to how syntax highlighting works in Sublime, it can't be used for syntax highlighting
     - See e.g. https://github.com/sublimehq/sublime_text/issues/817
@@ -57,10 +59,11 @@ from .utils import (
     get_settings,
     get_settings_dict,
     log,
+    not_none,
 )
 
 if TYPE_CHECKING:
-    from tree_sitter import Language, Parser, Tree
+    from tree_sitter import Language, Node, Parser, Query, Tree
 
 
 @dataclass
@@ -86,11 +89,25 @@ add_path(str(LIB_PATH))
 add_path(str(DEPS_PATH))
 
 
+class Injection(TypedDict):
+    """
+    A language injected into a byte range of an outer tree, e.g. Python in a Markdown fenced code block, or Markdown's
+    own inline content (Markdown itself is implemented as two languages, `markdown` and `markdown_inline`, joined by an
+    injection). `tree`'s node byte/point offsets are absolute, i.e. relative to the outer buffer, not to the injected
+    region: see `compute_injections`.
+    """
+
+    language_name: str
+    tree: Tree
+    children: list[Injection]
+
+
 class TreeDict(TypedDict):
     tree: Tree
     s: str
     scope: ScopeType
     updated_s: float
+    injections: list[Injection]
 
 
 #
@@ -176,6 +193,153 @@ def instantiate_languages(only_downloaded: bool = False):
 
         for scope in language_name_to_scopes[name]:
             SCOPE_TO_LANGUAGE[scope] = language
+
+
+#
+# Code for computing language injections, e.g. Python in a Markdown fenced code block, or JS in an HTML `<script>` tag
+#
+
+MAX_INJECTION_DEPTH = 6
+
+# Cached per language name. `None` means the language's grammar doesn't ship an injections query.
+LANGUAGE_NAME_TO_INJECTIONS_QUERY: dict[str, Query | None] = {}
+
+# Languages instantiated on demand for injections, keyed by `tree_sitter_language_pack` language name. Kept separate
+# from `SCOPE_TO_LANGUAGE`, which is keyed by Sublime scope and only holds `installed_languages`: an injected language
+# usually has no Sublime scope of its own (e.g. `markdown_inline`), and needn't be in `installed_languages`.
+LANGUAGE_NAME_TO_INJECTED_LANGUAGE: dict[str, Language] = {}
+
+
+def get_injections_query(language: Language, language_name: str) -> Query | None:
+    """
+    Get and cache the compiled injections query for `language`, if its grammar ships one and it compiles.
+
+    Compilation failures happen in practice: e.g. as of `tree_sitter_language_pack` 1.14.3, `get_injections_query`
+    returns the block grammar's query (referencing `fenced_code_block`, a node type it doesn't have) for
+    `markdown_inline`, apparently because both grammars live in the same upstream repo. Treat that the same as "no
+    injections query", rather than letting a bad bundled query break `compute_injections` for that language.
+    """
+    if language_name not in LANGUAGE_NAME_TO_INJECTIONS_QUERY:
+        from tree_sitter import Query, QueryError
+        from tree_sitter_language_pack import get_injections_query as get_injections_query_s
+
+        query_s = get_injections_query_s(language_name)
+        query = None
+        if query_s:
+            try:
+                query = Query(language, query_s)
+            except QueryError as e:
+                log(f'"{language_name}" injections query bundled with tree_sitter_language_pack failed to compile: {e}')
+        LANGUAGE_NAME_TO_INJECTIONS_QUERY[language_name] = query
+
+    return LANGUAGE_NAME_TO_INJECTIONS_QUERY[language_name]
+
+
+def get_injected_language(name: str, only_downloaded: bool) -> tuple[str, Language] | None:
+    """
+    Resolve `name` (as it appears in an injections query, e.g. a `#set!` directive, or the literal text of a fenced
+    code block's info string) to a `tree_sitter_language_pack` language name and `Language`. Common aliases, e.g. `js`
+    for `javascript`, are resolved with `detect_language_from_extension`, which doubles as an alias table.
+
+    `get_language` downloads and caches a language's precompiled parser the first time it's called, so this can block
+    on network I/O; pass `only_downloaded=True` to skip languages not already cached on disk, e.g. when calling from
+    the main thread.
+    """
+    from tree_sitter_language_pack import (
+        detect_language_from_extension,
+        downloaded_languages,
+        get_language,
+        has_language,
+    )
+
+    resolved_name = name if has_language(name) else detect_language_from_extension(name.lower())
+    if not resolved_name:
+        return None
+
+    if resolved_name in LANGUAGE_NAME_TO_INJECTED_LANGUAGE:
+        return resolved_name, LANGUAGE_NAME_TO_INJECTED_LANGUAGE[resolved_name]
+
+    if only_downloaded and resolved_name not in downloaded_languages():
+        return None
+
+    try:
+        language = get_language(resolved_name)
+    except Exception as e:
+        log(f'"{resolved_name}" injected language not available from tree_sitter_language_pack: {e}')
+        return None
+
+    LANGUAGE_NAME_TO_INJECTED_LANGUAGE[resolved_name] = language
+    return resolved_name, language
+
+
+def compute_injections(
+    node: Node,
+    language: Language,
+    language_name: str,
+    code: bytes,
+    only_downloaded: bool,
+    depth: int = 0,
+) -> list[Injection]:
+    """
+    Recursively discover and parse languages injected into `node`, e.g. Python in a Markdown fenced code block, or
+    Markdown's own inline content (Markdown is implemented as two languages, `markdown` and `markdown_inline`, joined
+    by an injection). `code` is the full buffer, encoded: injected trees are parsed with `Parser.included_ranges`, so
+    their node byte/point offsets come out relative to `code`, i.e. no relative-offset bookkeeping is needed to use
+    them alongside `node`'s own tree.
+
+    No incremental editing for injected trees (unlike `edit`, for the outer tree): they're fully recomputed here on
+    every parse and every edit. Simpler, and fine for the usually-small regions languages get injected into; revisit
+    if this turns out to matter for perf.
+    """
+    if depth >= MAX_INJECTION_DEPTH:
+        return []
+
+    query = get_injections_query(language, language_name)
+    if query is None:
+        return []
+
+    from tree_sitter import Parser, QueryCursor, Range
+
+    injections: list[Injection] = []
+
+    for pattern_index, captures in QueryCursor(query).matches(node):
+        if not (content_nodes := captures.get("injection.content")):
+            continue
+
+        if language_capture := captures.get("injection.language"):
+            injected_name = not_none(language_capture[0].text).decode()
+        else:
+            injected_name = query.pattern_settings(pattern_index).get("injection.language")
+        if not injected_name:
+            continue
+
+        if not (resolved := get_injected_language(injected_name, only_downloaded)):
+            continue
+        injected_name, injected_language = resolved
+
+        injected_parser = Parser(injected_language)
+        injected_parser.included_ranges = [
+            Range(
+                start_byte=n.start_byte,
+                end_byte=n.end_byte,
+                start_point=n.start_point,
+                end_point=n.end_point,
+            )
+            for n in content_nodes
+        ]
+        injected_tree = injected_parser.parse(code)
+
+        injections.append(
+            Injection(
+                language_name=injected_name,
+                tree=injected_tree,
+                children=compute_injections(
+                    injected_tree.root_node, injected_language, injected_name, code, only_downloaded, depth + 1
+                ),
+            )
+        )
+
+    return injections
 
 
 #
@@ -335,8 +499,15 @@ def parse(parser: Parser, scope: ScopeType, s: str) -> Tree:
     return parser.parse(s.encode())
 
 
-def make_tree_dict(tree: Tree, s: str, scope: ScopeType) -> TreeDict:
-    return {"tree": tree, "s": s, "updated_s": time.monotonic(), "scope": scope}
+def make_tree_dict(tree: Tree, s: str, scope: ScopeType, only_downloaded: bool = False) -> TreeDict:
+    """
+    Pass `only_downloaded=True` when this may run on the main thread, e.g. from a command, so computing injections
+    can't block on network I/O for a not-yet-cached injected language. See `compute_injections`.
+    """
+    language = SCOPE_TO_LANGUAGE[scope]
+    language_name = get_scope_to_language_name(mutable_settings.d)[scope]
+    injections = compute_injections(tree.root_node, language, language_name, s.encode(), only_downloaded)
+    return {"tree": tree, "s": s, "updated_s": time.monotonic(), "scope": scope, "injections": injections}
 
 
 def get_scope(view: View) -> str | None:

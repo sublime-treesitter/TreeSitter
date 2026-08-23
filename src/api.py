@@ -296,17 +296,24 @@ class InjectedNode:
     see `core.compute_injections`'s module docstring for which commands cross injection boundaries and which don't.
     """
 
-    __slots__ = ("_injections", "_outer", "raw")
+    __slots__ = ("_injections", "_outer", "_own_injection", "raw")
 
-    def __init__(self, node: Node, injections: list[Injection], outer: InjectedNode | None = None):
+    def __init__(
+        self,
+        node: Node,
+        injections: list[Injection],
+        outer: InjectedNode | None = None,
+        own_injection: Injection | None = None,
+    ):
         self.raw = node
         self._injections = injections
         self._outer = outer
+        self._own_injection = own_injection
 
     @property
     def parent(self) -> InjectedNode | None:
         if (parent := self.raw.parent) is not None:
-            return InjectedNode(parent, self._injections, self._outer)
+            return InjectedNode(parent, self._injections, self._outer, self._own_injection)
         return self._outer
 
     @property
@@ -323,11 +330,21 @@ class InjectedNode:
         """
         return self._injections
 
+    @property
+    def own_injection(self) -> Injection | None:
+        """
+        The `Injection` (see `core.compute_injections`) this node's own tree was parsed for, or `None` if this node is
+        still within the buffer's own top-level tree. Used by `get_captures_from_nodes` to resolve the right query
+        and language for a starting node that's already inside an injected tree - e.g. one selected inside a Python
+        fenced code block in a Markdown buffer - rather than always assuming the buffer's own.
+        """
+        return self._own_injection
+
     def _wrap_child(self, child: Node) -> InjectedNode:
         if injection := get_injection_for_node(child, self._injections):
-            outer = InjectedNode(child, self._injections, self._outer)
-            return InjectedNode(injection["tree"].root_node, injection["children"], outer)
-        return InjectedNode(child, self._injections, self._outer)
+            outer = InjectedNode(child, self._injections, self._outer, self._own_injection)
+            return InjectedNode(injection["tree"].root_node, injection["children"], outer, injection)
+        return InjectedNode(child, self._injections, self._outer, self._own_injection)
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self.raw, name)
@@ -350,7 +367,12 @@ def unwrap(node: Node | InjectedNode) -> Node:
 
 
 def resolve_node_for_range(
-    root: Node, injections: list[Injection], start_byte: int, end_byte: int, outer: InjectedNode | None = None
+    root: Node,
+    injections: list[Injection],
+    start_byte: int,
+    end_byte: int,
+    outer: InjectedNode | None = None,
+    own_injection: Injection | None = None,
 ) -> InjectedNode | None:
     """
     Find the smallest node spanning `[start_byte, end_byte)` starting from `root`, descending into an injected tree
@@ -370,12 +392,17 @@ def resolve_node_for_range(
         injection_root = entered["tree"].root_node
         content_node = not_none(descendant_for_byte_range(root, injection_root.start_byte, injection_root.end_byte))
         return resolve_node_for_range(
-            injection_root, entered["children"], start_byte, end_byte, InjectedNode(content_node, injections, outer)
+            injection_root,
+            entered["children"],
+            start_byte,
+            end_byte,
+            InjectedNode(content_node, injections, outer, own_injection),
+            entered,
         )
 
     if (node := descendant_for_byte_range(root, start_byte, end_byte)) is None:
         return None
-    return InjectedNode(node, injections, outer)
+    return InjectedNode(node, injections, outer, own_injection)
 
 
 def get_ancestors[NodeT: "Node | InjectedNode"](node: NodeT, max_len: int | None = None) -> list[NodeT]:
@@ -938,12 +965,38 @@ def get_captures_from_nodes(
     `get_selected_nodes`) searches only underneath it, injections included - if `node` is itself an `InjectedNode`,
     "underneath" is relative to whichever tree it's already in (see `InjectedNode.injections`), not the buffer's
     outer one.
+
+    A `node` can also already be *inside* an injected tree (e.g. one selected within a Python fenced code block in a
+    Markdown buffer - see `InjectedNode.own_injection`): `query_s` doesn't apply to it then (it was presumably
+    resolved for the buffer's own top-level language), so such nodes are queried with a query resolved for their own
+    injected language instead, the same way `get_captures_from_injections` does for injections found underneath.
     """
     if not (tree_dict := get_tree_dict(view.buffer_id())):
         return []
 
     resolved_queries_path = queries_path or get_queries_path(mutable_settings.d)
-    captures = get_captures_from_nodes_with_language(nodes, SCOPE_TO_LANGUAGE[tree_dict["scope"]], query_s)
+
+    groups: dict[int, tuple[Injection | None, list[Node | InjectedNode]]] = {}
+    for node in nodes:
+        own_injection = node.own_injection if isinstance(node, InjectedNode) else None
+        groups.setdefault(id(own_injection), (own_injection, []))[1].append(node)
+
+    captures: list[CaptureDict] = []
+    for own_injection, group_nodes in groups.values():
+        if own_injection is None:
+            captures.extend(
+                get_captures_from_nodes_with_language(group_nodes, SCOPE_TO_LANGUAGE[tree_dict["scope"]], query_s)
+            )
+            continue
+
+        language_name = own_injection["language_name"]
+        own_query_s = get_query_s_from_file(
+            language_name, resolved_queries_path, symbols_file, ignore_file_not_found=True
+        ) or get_tags_query_s(language_name)
+        if own_query_s:
+            captures.extend(
+                get_captures_from_nodes_with_language(group_nodes, own_injection["tree"].language, own_query_s)
+            )
 
     for node in nodes:
         injections = node.injections if isinstance(node, InjectedNode) else tree_dict["injections"]
@@ -1409,7 +1462,7 @@ class TreeSitterGotoSymbolCommand(sublime_plugin.TextCommand):
         queries_path: str = "",
         symbols_file: str = SYMBOLS_FILE,
         ignore_file_not_found=True,
-        in_selection = False,
+        in_selection=False,
     ):
         if not (tree_dict := get_tree_dict(self.view.buffer_id())):
             return self.fallback()

@@ -339,6 +339,34 @@ def test_get_captures_from_nodes_scopes_injection_search_to_the_given_node(monke
     assert b"Doc" not in by_text  # neither is the outer heading
 
 
+def test_get_captures_from_nodes_resolves_own_query_for_a_node_already_inside_an_injection(monkeypatch):
+    """
+    A starting node can itself already be inside an injected tree (see `InjectedNode.own_injection`) - e.g. one
+    `get_selected_nodes` returns for a selection made inside a Python fenced code block in a Markdown buffer. The
+    caller's `query_s` was resolved for the buffer's own top-level language (Markdown), so it doesn't apply to this
+    node - `get_captures_from_nodes` must resolve and use a Python query instead, exactly as if this were a real
+    top-level Python buffer.
+    """
+    tree_dict = _make_markdown_tree_dict(monkeypatch)
+    fake_view = types.SimpleNamespace(buffer_id=lambda: 1)
+
+    greeter_start = MARKDOWN_WITH_SYMBOLS.index("Greeter")
+    leaf = api.resolve_node_for_range(
+        tree_dict["tree"].root_node, tree_dict["injections"], greeter_start, greeter_start + len("Greeter")
+    )
+    node = not_none(leaf)
+    while (parent := node.parent) is not None and parent.own_injection is not None:
+        node = parent
+    assert node.own_injection is not None and node.own_injection["language_name"] == "python"
+
+    # A markdown query_s (or garbage) must be ignored in favor of a query resolved for the node's own language
+    captures = api.get_captures_from_nodes([node], fake_view, "(not a valid query at all (((")
+    by_text = {c["node"].text: c for c in captures}
+
+    assert by_text[b"Greeter"]["name"] == "definition.class"
+    assert by_text[b"greet"]["name"] == "definition.function"
+
+
 def test_get_capture_kind_for_headings():
     import sublime
 

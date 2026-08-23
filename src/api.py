@@ -96,7 +96,7 @@ def get_tree_from_code(scope: str, s: str | bytes):
     return parser.parse(s.encode() if isinstance(s, str) else s)
 
 
-def query_node_with_s(scope: str | None, node: Node, query_s: str):
+def query_node_with_s(scope: str | None, node: Node | InjectedNode, query_s: str):
     """
     Query a node with `query_s`. Returns `(node, capture_name)` tuples, in the same document order in which their
     matches were found, i.e. an ancestor's captures always come before its descendants'. This ordering is relied on by
@@ -105,6 +105,10 @@ def query_node_with_s(scope: str | None, node: Node, query_s: str):
 
     Note `QueryCursor.captures` doesn't preserve this ordering (it groups all captures by capture name), so we build
     this list from `QueryCursor.matches` instead.
+
+    `QueryCursor.matches` needs a real `tree_sitter.Node`, so `node` is unwrapped if it's an `InjectedNode` (see
+    `unwrap`). This means a query never searches inside injected trees yet - see `core.compute_injections`'s module
+    docstring.
 
     See https://github.com/tree-sitter/py-tree-sitter#pattern-matching
     """
@@ -116,7 +120,7 @@ def query_node_with_s(scope: str | None, node: Node, query_s: str):
     cursor = QueryCursor(Query(language, query_s))
     return [
         (captured_node, name)
-        for _, captures in cursor.matches(node)
+        for _, captures in cursor.matches(unwrap(node))
         for name, nodes in captures.items()
         for captured_node in nodes
     ]
@@ -511,6 +515,18 @@ def get_descendant(region: sublime.Region, view: sublime.View) -> InjectedNode |
     return None
 
 
+def escape_injection_roots(node: InjectedNode) -> InjectedNode:
+    """
+    If `node` is (or, after climbing, becomes) the root of an injected tree, substitute the outer node it replaced,
+    since an injected tree's root never appears in any `.children` list (unlike every other node, it doesn't occupy a
+    position among literal siblings in its own tree) - so it can't be looked up by "sibling position" at all. Applied
+    repeatedly, since the outer node it replaced could itself be an injection root (nested injections).
+    """
+    while node.raw.parent is None and node.parent is not None:
+        node = node.parent
+    return node
+
+
 def get_sibling(region: sublime.Region, view: sublime.View, forward: bool = True) -> InjectedNode | None:
     """
     - Find node that spans region
@@ -518,17 +534,13 @@ def get_sibling(region: sublime.Region, view: sublime.View, forward: bool = True
         - If node spanning region is root node, find "first" descendant that has siblings
     - Return the next or previous sibling
 
-    Crosses injection boundaries via `InjectedNode` (see `core.compute_injections`). An injected tree's root never
-    appears in any `.children` list (unlike every other node, it doesn't occupy a position among literal siblings in
-    its own tree), so it can't be looked up by "sibling position" at all; the outer node it replaced can, so that's
-    what we look for the sibling of instead.
+    Crosses injection boundaries via `InjectedNode` (see `core.compute_injections` and `escape_injection_roots`).
     """
     node = get_node_spanning_region(region, view.buffer_id())
     if not node:
         return None
 
-    while node.raw.parent is None and node.parent is not None:
-        node = node.parent
+    node = escape_injection_roots(node)
 
     if not node.parent:
         # We're at root node, so we find the first descendant that has siblings, and return sibling adjacent to region
@@ -550,7 +562,10 @@ def get_sibling(region: sublime.Region, view: sublime.View, forward: bool = True
 
     while node.parent and node.parent.parent:
         if len(node.parent.children) == 1:
-            node = node.parent
+            # `node.parent` might itself be an injected tree's root (e.g. Markdown's `code_fence_content` injects a
+            # JSON tree whose root, `document`, has exactly one child) - re-escape after every climb, not just once
+            # at the top, or the next step below can look for a sibling position that doesn't exist
+            node = escape_injection_roots(node.parent)
         else:
             break
 
@@ -795,13 +810,16 @@ class CaptureDict(TypedDict):
     node: Node
     name: str
     breadcrumbs: list[BreadcrumbDict]
-    search_node: Node
+    search_node: Node | InjectedNode
     breadcrumb: BreadcrumbDict | None
 
 
-def get_captures_from_nodes(nodes: list[Node], view: sublime.View, query_s: str) -> list[CaptureDict]:
+def get_captures_from_nodes(nodes: list[Node | InjectedNode], view: sublime.View, query_s: str) -> list[CaptureDict]:
     """
     Get capture tuples from search nodes. Capture tuples include captured ancestors for rendering breadcrumbs.
+
+    `nodes` may be `InjectedNode`s (e.g. from `get_selected_nodes`); `query_node_with_s` unwraps them, so this never
+    searches inside further injected trees - see `core.compute_injections`'s module docstring.
     """
 
     if not (tree_dict := get_tree_dict(view.buffer_id())):
@@ -1226,8 +1244,7 @@ class TreeSitterQuerySymbolCommand(sublime_plugin.WindowCommand):
             query_s = f"(({query_s}) @definition.query)"
         self.query_s = query_s
 
-        # `get_captures_from_nodes` doesn't search injected trees yet, so unwrap to plain `tree_sitter.Node`s
-        nodes = [n.raw for n in get_selected_nodes(view)] or [tree_dict["tree"].root_node]
+        nodes = cast("list[Node | InjectedNode]", get_selected_nodes(view)) or [tree_dict["tree"].root_node]
         if captures := get_captures_from_nodes(nodes, view, query_s):
             goto_captures(captures, view)
 

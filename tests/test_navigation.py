@@ -27,13 +27,15 @@ JSON_FENCE_MARKDOWN = """```json
 
 class FakeView:
     """
-    Just enough of `sublime.View` for the functions under test: a stable `buffer_id`, and `text_point_utf8` mapping
-    (row, col) to a "point" the same way real Sublime does for ASCII text (this test content has no multibyte chars).
+    Just enough of `sublime.View` for the functions under test: a stable `buffer_id`, `text_point_utf8` mapping
+    (row, col) to a "point" the same way real Sublime does for ASCII text (this test content has no multibyte chars),
+    and a settable `sel()` for tests that go through `get_selected_nodes`.
     """
 
     def __init__(self, buffer_id: int, s: str):
         self._buffer_id = buffer_id
         self._lines = s.splitlines(keepends=True)
+        self.selection: list[sublime.Region] = []
 
     def buffer_id(self):
         return self._buffer_id
@@ -41,12 +43,15 @@ class FakeView:
     def text_point_utf8(self, row: int, col: int) -> int:
         return sum(len(line) for line in self._lines[:row]) + col
 
+    def sel(self):
+        return self.selection
 
-def _make_tree_dict_and_view(monkeypatch, code: str, buffer_id: int = 1):
+
+def _make_tree_dict_and_view(monkeypatch, code: str, scope: str = "text.html.markdown", buffer_id: int = 1):
     from tree_sitter import Parser
 
-    tree = core.parse(Parser(), "text.html.markdown", code)
-    tree_dict = core.make_tree_dict(tree, code, "text.html.markdown")
+    tree = core.parse(Parser(), scope, code)
+    tree_dict = core.make_tree_dict(tree, code, scope)
     monkeypatch.setattr(api, "get_tree_dict", lambda bid: tree_dict if bid == buffer_id else None)
     return tree_dict, FakeView(buffer_id, code)
 
@@ -191,3 +196,40 @@ def test_injected_node_proxies_attributes_and_compares_by_wrapped_node(monkeypat
     assert node.type == "number"
     assert node.start_byte == start
     assert node == api.InjectedNode(node.raw, [])  # equality is by wrapped node, regardless of injection context
+
+
+def test_get_sibling_handles_injected_root_with_a_single_child(monkeypatch):
+    """
+    Regression test, found by fuzzing every position in a real document after a bug report: `code_fence_content`
+    injects a JSON tree whose root (`document`) has exactly one child (the top-level `object`). Climbing from inside
+    that object used to reassign `node` to the injected `document` root without re-escaping it (see
+    `escape_injection_roots`), then crash looking for its position among `code_fence_content`'s native children -
+    which it was never a member of, since it's a different tree entirely.
+    """
+    _, view = _make_tree_dict_and_view(monkeypatch, JSON_FENCE_MARKDOWN)
+
+    start = JSON_FENCE_MARKDOWN.index("{") + 1  # resolves to the JSON `object` node itself
+    sibling = api.get_sibling(sublime.Region(start, start + 1), view, forward=True)
+
+    assert sibling is not None
+    assert sibling.type == "fenced_code_block_delimiter"
+
+
+def test_get_captures_from_nodes_accepts_injected_nodes(monkeypatch):
+    """
+    Regression test: `get_selected_nodes` returns `InjectedNode`s, and real external code (that predates injections
+    entirely) feeds them straight into `get_captures_from_nodes` without knowing to unwrap - this used to crash
+    inside `QueryCursor.matches`, which needs a real `tree_sitter.Node`. `query_node_with_s` now unwraps.
+    """
+    code = "def f():\n    x = 1\n    return x\n"
+    _, view = _make_tree_dict_and_view(monkeypatch, code, scope="source.python")
+    view.selection = [sublime.Region(0, len(code))]
+
+    nodes = api.get_selected_nodes(view, include_emtpy_regions=True)
+    assert nodes and isinstance(nodes[0], api.InjectedNode)
+
+    query_s = "(function_definition name: (identifier) @definition.function)"
+    captures = api.get_captures_from_nodes(nodes, view, query_s)
+
+    assert len(captures) == 1
+    assert captures[0]["node"].text == b"f"

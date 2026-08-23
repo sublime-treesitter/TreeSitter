@@ -233,3 +233,89 @@ def test_get_captures_from_nodes_accepts_injected_nodes(monkeypatch):
 
     assert len(captures) == 1
     assert captures[0]["node"].text == b"f"
+
+
+# Regression repro from a real bug report: indentation before the first statement in an HTML `<script>` tag is
+# trimmed from the injected JS grammar's own `program` root node, so its span doesn't exactly match the HTML
+# `raw_text` node it was parsed from - see `Injection.content_ranges`.
+HTML_WITH_SCRIPT = """<!DOCTYPE html>
+<html lang="en">
+  <body>
+    <script>
+      function fn() {
+        var el = document.getElementsByTagName('head')[0]
+      }
+    </script>
+  </body>
+</html>
+"""
+
+
+def _find_node(node, node_type: str):
+    if node.type == node_type:
+        return node
+    for child in node.children:
+        if found := _find_node(child, node_type):
+            return found
+    return None
+
+
+def test_get_node_spanning_region_enters_html_script_injection_from_leading_whitespace(monkeypatch):
+    tree_dict, view = _make_tree_dict_and_view(monkeypatch, HTML_WITH_SCRIPT, scope="text.html.basic")
+
+    raw_text = _find_node(tree_dict["tree"].root_node, "raw_text")
+    assert raw_text is not None
+
+    # A point inside the indentation before `function`, i.e. within the JS grammar's trimmed leading whitespace
+    ws_point = raw_text.start_byte + 1
+    assert HTML_WITH_SCRIPT.encode()[ws_point : ws_point + 1].isspace()
+
+    node = api.get_node_spanning_region((ws_point, ws_point), view.buffer_id())
+
+    assert node is not None
+    assert node.own_injection is not None and node.own_injection["language_name"] == "javascript"
+
+
+def test_get_descendant_enters_html_script_injection_despite_leading_whitespace(monkeypatch):
+    """
+    Regression test: selecting exactly the HTML `raw_text` node's span used to get permanently stuck there when
+    running "select descendant" repeatedly, unable to reach the injected JS tree underneath, because
+    `get_injection_for_node` compared against the JS grammar's trimmed `program` root span instead of the actual
+    `@injection.content` range.
+    """
+    tree_dict, view = _make_tree_dict_and_view(monkeypatch, HTML_WITH_SCRIPT, scope="text.html.basic")
+
+    raw_text = _find_node(tree_dict["tree"].root_node, "raw_text")
+    assert raw_text is not None
+    region = sublime.Region(raw_text.start_byte, raw_text.end_byte)
+
+    node = api.get_node_spanning_region(region, view.buffer_id())
+    assert node is not None
+    assert node.type == "program"  # already resolved into the injected JS tree, not stuck at raw_text
+
+    descendant = api.get_descendant(region, view)
+    assert descendant is not None
+    assert descendant.type == "function_declaration"
+
+
+def test_show_node_under_selection_reports_injected_language(monkeypatch):
+    """
+    The popup's "lang" field should reflect the node's own injected language (JS, here), not the buffer's own
+    top-level language (HTML) - see `InjectedNode.own_injection`.
+    """
+    _, view = _make_tree_dict_and_view(monkeypatch, HTML_WITH_SCRIPT, scope="text.html.basic")
+
+    fn_point = HTML_WITH_SCRIPT.index("fn()")
+    view.selection = [sublime.Region(fn_point, fn_point)]
+    view.show_popup = lambda html, **kwargs: None
+
+    captured_pairs: dict[str, str] = {}
+    monkeypatch.setattr(
+        api,
+        "render_node_html",
+        lambda pairs: captured_pairs.update(dict(pairs)) or "<body></body>",
+    )
+
+    api.show_node_under_selection(view, select=False)
+
+    assert captured_pairs["lang"] == "javascript"

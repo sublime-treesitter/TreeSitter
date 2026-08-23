@@ -97,10 +97,17 @@ class Injection(TypedDict):
     own inline content (Markdown itself is implemented as two languages, `markdown` and `markdown_inline`, joined by an
     injection). `tree`'s node byte/point offsets are absolute, i.e. relative to the outer buffer, not to the injected
     region: see `compute_injections`.
+
+    `content_ranges` holds the `(start_byte, end_byte)` of every `@injection.content` node `tree` was parsed from -
+    i.e. exactly the ranges passed to `Parser.included_ranges`. This is deliberately not the same as
+    `tree.root_node.start_byte`/`.end_byte`: a grammar can trim leading/trailing whitespace from its root node (e.g.
+    indentation before the first statement in an HTML `<script>` tag), so matching against the parsed root's own span
+    would silently fail to recognize the injection for a node/point that falls in that trimmed slice.
     """
 
     language_name: str
     tree: Tree
+    content_ranges: list[tuple[int, int]]
     children: list[Injection]
 
 
@@ -356,7 +363,7 @@ def compute_injections(
         injected_name, injected_language = resolved
 
         injected_parser = Parser(injected_language)
-        injected_parser.included_ranges = [
+        ranges = [
             Range(
                 start_byte=n.start_byte,
                 end_byte=n.end_byte,
@@ -365,12 +372,14 @@ def compute_injections(
             )
             for n in content_nodes
         ]
+        injected_parser.included_ranges = ranges
         injected_tree = injected_parser.parse(code)
 
         injections.append(
             Injection(
                 language_name=injected_name,
                 tree=injected_tree,
+                content_ranges=[(r.start_byte, r.end_byte) for r in ranges],
                 children=compute_injections(
                     injected_tree.root_node, injected_language, injected_name, code, only_downloaded, depth + 1
                 ),

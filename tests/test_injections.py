@@ -67,6 +67,27 @@ def test_compute_injections_unresolvable_fence_language_is_skipped():
     assert injections == []
 
 
+def test_compute_injections_content_ranges_can_differ_from_trimmed_root_span():
+    """
+    `Injection.content_ranges` records the actual `@injection.content` byte range(s) a tree was parsed from - not
+    necessarily the same as `tree.root_node`'s own span, since a grammar can trim leading/trailing whitespace from its
+    root node. Here, the JS grammar trims the indentation before `function` from its `program` root. See
+    `Injection`'s docstring, `get_injection_for_node`, `resolve_node_for_range`.
+    """
+    code = b"<script>\n  function fn() {}\n</script>\n"
+    language, root = _parse("html", code)
+    injections = core.compute_injections(root, language, "html", code, only_downloaded=False)
+
+    assert len(injections) == 1
+    injection = injections[0]
+    content_start, content_end = injection["content_ranges"][0]
+    root_node = injection["tree"].root_node
+
+    assert content_start < root_node.start_byte  # leading whitespace trimmed from the parsed root
+    assert code[content_start : root_node.start_byte].strip() == b""
+    assert content_end == root_node.end_byte
+
+
 def test_get_injections_query_is_cached():
     language = get_language("markdown")
     q1 = core.get_injections_query(language, "markdown")

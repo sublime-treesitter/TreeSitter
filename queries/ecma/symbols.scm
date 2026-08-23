@@ -1,10 +1,13 @@
 ; Note: there is no "ecma" language, this is for extending only
 
+; Class field definitions are deliberately not here: the javascript grammar names the node `field_definition`, while
+; typescript/tsx name it `public_field_definition`. A query referencing either fails to compile against the other's
+; grammar, so each of javascript/symbols.scm and typescript/symbols.scm defines its own pattern for it instead.
+
 (function_declaration (identifier) @definition.function @breadcrumb.1)
 (variable_declarator (identifier) @definition.function @breadcrumb.1 (arrow_function))
 (method_definition (property_identifier) @definition.function @breadcrumb.1)
 (pair (property_identifier) @definition.function (arrow_function))
-(public_field_definition (property_identifier) @definition.function @breadcrumb.1 (arrow_function))
 
 (program (lexical_declaration (variable_declarator
   [

@@ -18,7 +18,7 @@ import pytest
 
 # Kept small on purpose: instantiating a language downloads and caches its parser from `tree_sitter_language_pack`
 # over the network the first time, so tests only pull in what they actually exercise.
-LANGUAGES = ["python", "javascript", "markdown"]
+LANGUAGES = ["python", "javascript", "typescript", "markdown", "html"]
 
 
 def _install_sublime_stubs():

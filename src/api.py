@@ -225,12 +225,13 @@ def walk_tree(tree_or_node: Tree | Node, max_depth: int | None = None):
 
 def get_injection_for_node(node: Node, injections: list[Injection]) -> Injection | None:
     """
-    Does `node`'s byte range exactly match one of `injections`' root node, i.e. is `node` an `@injection.content` node
-    with a tree parsed for it (see `core.compute_injections`)? Doesn't match a node merely contained within one.
+    Does `node`'s byte range exactly match one of `injections`' content ranges, i.e. is `node` an `@injection.content`
+    node a tree was parsed for (see `core.compute_injections`)? Matched against `Injection.content_ranges`, not the
+    parsed tree's own root node span, since those can differ (see `Injection`'s docstring). Doesn't match a node
+    merely contained within one.
     """
     for injection in injections:
-        root = injection["tree"].root_node
-        if root.start_byte == node.start_byte and root.end_byte == node.end_byte:
+        if (node.start_byte, node.end_byte) in injection["content_ranges"]:
             return injection
     return None
 
@@ -379,20 +380,21 @@ def resolve_node_for_range(
     (see `core.compute_injections`) whenever one contains the range, rather than returning a node from the outer,
     pre-injection tree (e.g. an unparsed token inside Markdown's `inline` node). Wraps the result in an `InjectedNode`
     so further navigation (`.parent`, `.children`) can cross back out.
+
+    Matched against `Injection.content_ranges`, not the parsed tree's own root node span (see `Injection`'s
+    docstring) - e.g. a point in the indentation before the first statement in an HTML `<script>` tag is still within
+    the `raw_text` content range even though the injected JS grammar trims it from its `program` root node.
     """
     entered = next(
-        (
-            i
-            for i in injections
-            if i["tree"].root_node.start_byte <= start_byte <= end_byte <= i["tree"].root_node.end_byte
-        ),
+        (i for i in injections if any(s <= start_byte and end_byte <= e for s, e in i["content_ranges"])),
         None,
     )
     if entered is not None:
-        injection_root = entered["tree"].root_node
-        content_node = not_none(descendant_for_byte_range(root, injection_root.start_byte, injection_root.end_byte))
+        content_start = min(s for s, _ in entered["content_ranges"])
+        content_end = max(e for _, e in entered["content_ranges"])
+        content_node = not_none(descendant_for_byte_range(root, content_start, content_end))
         return resolve_node_for_range(
-            injection_root,
+            entered["tree"].root_node,
             entered["children"],
             start_byte,
             end_byte,
@@ -786,11 +788,16 @@ def show_node_under_selection(view: sublime.View, select: bool, **kwargs):
         nodes.append(node)
 
     node = nodes[0]
+    language = (
+        node.own_injection["language_name"]
+        if node.own_injection
+        else get_scope_to_language_name(mutable_settings.d)[tree_dict["scope"]]
+    )
     pairs: list[tuple[str, str]] = [
         ("type", node.type),
         ("depth", str(get_depth(node))),
         ("range", f"{node.start_point} → {node.end_point}"),
-        ("lang", get_scope_to_language_name(mutable_settings.d)[tree_dict["scope"]]),
+        ("lang", language),
         ("scope", tree_dict["scope"]),
     ]
     if field_name := get_field_name(node):
@@ -1004,8 +1011,7 @@ def get_captures_from_nodes(
         in_range = [
             injection
             for injection in injections
-            if raw_node.start_byte <= injection["tree"].root_node.start_byte
-            and injection["tree"].root_node.end_byte <= raw_node.end_byte
+            if all(raw_node.start_byte <= s and e <= raw_node.end_byte for s, e in injection["content_ranges"])
         ]
         captures.extend(get_captures_from_injections(in_range, resolved_queries_path, symbols_file))
 

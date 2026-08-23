@@ -73,6 +73,41 @@ def test_get_query_s_from_file_resolves_inherits_pragma():
     assert "@definition.function" in query_s  # inherited from ecma/symbols.scm
 
 
+def test_javascript_symbols_query_compiles_and_finds_class_fields():
+    """
+    Regression test: `ecma/symbols.scm` used to have a `public_field_definition` pattern (TypeScript/TSX's name for a
+    class field), but the plain `javascript` grammar names the same node `field_definition` - so the fully resolved
+    query (`javascript/symbols.scm` + inherited `ecma/symbols.scm`) failed to compile for a `.js` buffer
+    (`tree_sitter.QueryError: Invalid node type ... public_field_definition`), crashing goto/select symbol even though
+    nothing about the buffer itself was wrong. `javascript/symbols.scm` now defines its own pattern using the name its
+    own grammar actually has, and `ecma/symbols.scm` no longer mentions either name.
+    """
+    code = "class Foo {\n  bar = () => 1\n}\n"
+    root = _parse("source.js", code)
+    query_s = api.get_query_s_from_file("javascript", queries_path=QUERIES_PATH)
+
+    captures = api.query_node_with_s("source.js", root, query_s)
+    assert captures is not None
+
+    names = {(node.text, name) for node, name in captures}
+    assert (b"Foo", "definition.class") in names
+    assert (b"bar", "definition.function") in names
+
+
+def test_typescript_symbols_query_still_finds_class_fields():
+    # typescript/tsx's grammar names the same node `public_field_definition` - see the javascript test above
+    code = "class Foo {\n  bar = () => 1\n}\n"
+    root = _parse("source.ts", code)
+    query_s = api.get_query_s_from_file("typescript", queries_path=QUERIES_PATH)
+
+    captures = api.query_node_with_s("source.ts", root, query_s)
+    assert captures is not None
+
+    names = {(node.text, name) for node, name in captures}
+    assert (b"Foo", "definition.class") in names
+    assert (b"bar", "definition.function") in names
+
+
 def test_get_query_s_from_file_missing_file_raises():
     try:
         api.get_query_s_from_file("nonexistent_language", queries_path=QUERIES_PATH)

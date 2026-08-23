@@ -1,6 +1,7 @@
 ; inherits: ecma
 
 (class_declaration (type_identifier) @definition.class @breadcrumb.1)
+(public_field_definition (property_identifier) @definition.function @breadcrumb.1 (arrow_function))
 
 (type_alias_declaration (type_identifier) @definition.type)
 (interface_declaration (type_identifier) @definition.interface)

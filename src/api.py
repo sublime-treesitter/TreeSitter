@@ -194,6 +194,18 @@ def walk_tree(tree_or_node: Tree | Node, max_depth: int | None = None):
                 retracing = False
 
 
+def get_injection_for_node(node: Node, injections: list[Injection]) -> Injection | None:
+    """
+    Does `node`'s byte range exactly match one of `injections`' root node, i.e. is `node` an `@injection.content` node
+    with a tree parsed for it (see `core.compute_injections`)? Doesn't match a node merely contained within one.
+    """
+    for injection in injections:
+        root = injection["tree"].root_node
+        if root.start_byte == node.start_byte and root.end_byte == node.end_byte:
+            return injection
+    return None
+
+
 def format_injected_tree(
     root_node: Node,
     injections: list[Injection],
@@ -205,19 +217,15 @@ def format_injected_tree(
     Render `root_node`'s tree as indented lines with `format_node(node, field_name)`, one per node, splicing in each
     injected tree in `injections` (see `core.compute_injections`) right after the node it was injected into.
 
-    Used by `TreeSitterPrintTreeCommand`. Only descends into `injections`, not arbitrarily deep matching: a node from
-    `root_node`'s tree is spliced only if its byte range exactly matches an injected tree's root node, i.e. an
-    `@injection.content` node, not any node contained within one.
+    Used by `TreeSitterPrintTreeCommand`.
     """
-    injection_by_range = {(inj["tree"].root_node.start_byte, inj["tree"].root_node.end_byte): inj for inj in injections}
-
     lines: list[str] = []
     for n, cursor in walk_tree(root_node):
         node = not_none(n)
         depth = cursor.depth + depth_offset
         lines.append(f"{indent * depth}{format_node(node, cursor.field_name)}")
 
-        if injection := injection_by_range.get((node.start_byte, node.end_byte)):
+        if injection := get_injection_for_node(node, injections):
             lines.append(f"{indent * (depth + 1)}[injected: {injection['language_name']}]")
             lines.extend(
                 format_injected_tree(
@@ -239,12 +247,111 @@ def descendant_for_byte_range(node: Node, start_byte: int, end_byte: int) -> Nod
     return node.descendant_for_byte_range(start_byte, end_byte)
 
 
-def get_ancestors(node: Node, max_len: int | None = None) -> list[Node]:
+class InjectedNode:
+    """
+    Wraps a `tree_sitter.Node`, so that navigating via `.parent`/`.children` can cross injection boundaries (see
+    `core.compute_injections`) as if the outer tree and every tree injected into it (transitively) were one tree.
+
+    This exists because `tree_sitter.Tree`/`Node` can't literally be merged across languages: they're immutable
+    native structures, one per `Language`, and there's no API for a `Node` in one `Tree` to have a `.parent` living in
+    a different `Tree`. So instead, this is the "glue": `.children` descends into an injected tree if a child is
+    exactly an `@injection.content` node (see `get_injection_for_node`), and `.parent` climbs back out to the outer
+    node an injected tree's root replaced, once the wrapped node's own native `.parent` is exhausted.
+
+    Every other attribute (`.type`, `.start_byte`, `.text`, `.id`, `.child_by_field_name`, ...) is delegated straight
+    to the wrapped node, unchanged - use `.raw` to get it directly, e.g. to run a `Query` against it (`QueryCursor`
+    needs a real `tree_sitter.Node`, not this wrapper).
+
+    Deliberately not used by anything that needs to walk a whole subtree (`walk_tree`, `get_cousins`, symbol queries):
+    for those, wrapping every visited node is wasted overhead, and (for `get_cousins`) crossing isn't even wanted -
+    see `core.compute_injections`'s module docstring for which commands cross injection boundaries and which don't.
+    """
+
+    __slots__ = ("_injections", "_outer", "raw")
+
+    def __init__(self, node: Node, injections: list[Injection], outer: InjectedNode | None = None):
+        self.raw = node
+        self._injections = injections
+        self._outer = outer
+
+    @property
+    def parent(self) -> InjectedNode | None:
+        if (parent := self.raw.parent) is not None:
+            return InjectedNode(parent, self._injections, self._outer)
+        return self._outer
+
+    @property
+    def children(self) -> list[InjectedNode]:
+        return [self._wrap_child(c) for c in self.raw.children]
+
+    def _wrap_child(self, child: Node) -> InjectedNode:
+        if injection := get_injection_for_node(child, self._injections):
+            outer = InjectedNode(child, self._injections, self._outer)
+            return InjectedNode(injection["tree"].root_node, injection["children"], outer)
+        return InjectedNode(child, self._injections, self._outer)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.raw, name)
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, InjectedNode) and self.raw == other.raw
+
+    def __hash__(self) -> int:
+        return hash(self.raw.id)
+
+    def __repr__(self) -> str:
+        return f"InjectedNode({self.raw!r})"
+
+
+def unwrap(node: Node | InjectedNode) -> Node:
+    """
+    Get the plain `tree_sitter.Node` underneath `node`, whether or not it's an `InjectedNode`.
+    """
+    return node.raw if isinstance(node, InjectedNode) else node
+
+
+def resolve_node_for_range(
+    root: Node, injections: list[Injection], start_byte: int, end_byte: int, outer: InjectedNode | None = None
+) -> InjectedNode | None:
+    """
+    Find the smallest node spanning `[start_byte, end_byte)` starting from `root`, descending into an injected tree
+    (see `core.compute_injections`) whenever one contains the range, rather than returning a node from the outer,
+    pre-injection tree (e.g. an unparsed token inside Markdown's `inline` node). Wraps the result in an `InjectedNode`
+    so further navigation (`.parent`, `.children`) can cross back out.
+    """
+    entered = next(
+        (
+            i
+            for i in injections
+            if i["tree"].root_node.start_byte <= start_byte <= end_byte <= i["tree"].root_node.end_byte
+        ),
+        None,
+    )
+    if entered is not None:
+        injection_root = entered["tree"].root_node
+        content_node = not_none(descendant_for_byte_range(root, injection_root.start_byte, injection_root.end_byte))
+        return resolve_node_for_range(
+            injection_root, entered["children"], start_byte, end_byte, InjectedNode(content_node, injections, outer)
+        )
+
+    if (node := descendant_for_byte_range(root, start_byte, end_byte)) is None:
+        return None
+    return InjectedNode(node, injections, outer)
+
+
+def get_ancestors[NodeT: "Node | InjectedNode"](node: NodeT, max_len: int | None = None) -> list[NodeT]:
     """
     Get all ancestors of node, including node itself.
+
+    Works with a plain `tree_sitter.Node` (climbing via its native `.parent`, i.e. never crossing injection
+    boundaries: this is what `get_cousins` wants) or an `InjectedNode` (climbing via its `.parent`, which does cross
+    boundaries: this is what everything else here wants). See `InjectedNode`.
+
+    Untyped internally (`.parent` climbs within whichever of the two types `node` actually is, but the two aren't
+    related closely enough for a type checker to track that polymorphism through a loop); the return type is honest.
     """
-    nodes: list[Node] = []
-    current_node: Node | None = node
+    nodes: list[Any] = []
+    current_node: Any = node
 
     while current_node:
         nodes.append(current_node)
@@ -254,17 +361,19 @@ def get_ancestors(node: Node, max_len: int | None = None) -> list[Node]:
     return nodes
 
 
-def get_depth(node: Node) -> int:
+def get_depth(node: Node | InjectedNode) -> int:
     """
-    Get 0-based depth of node relative to tree's `root_node`.
+    Get 0-based depth of node relative to tree's `root_node`. See `get_ancestors` for `Node` vs. `InjectedNode`.
     """
     return len(get_ancestors(node)) - 1
 
 
-def get_node_spanning_region(region: sublime.Region | tuple[int, int], buffer_id: int) -> Node | None:
+def get_node_spanning_region(region: sublime.Region | tuple[int, int], buffer_id: int) -> InjectedNode | None:
     """
     Get smallest node spanning region, s.t. node's start point is less than or equal to region's start point, and
-    node's end point is greater than or equal region's end point.
+    node's end point is greater than or equal region's end point. Descends into injected trees (see
+    `core.compute_injections`) when the region falls inside one, e.g. a point inside a Markdown fenced Python block
+    resolves to a node in the injected Python tree, not the Markdown `code_fence_content` leaf: see `InjectedNode`.
 
     If there are two nodes matching a zero-width region, prefer the "deeper" of the two, i.e. the one furthest from the
     root of the tree.
@@ -274,13 +383,15 @@ def get_node_spanning_region(region: sublime.Region | tuple[int, int], buffer_id
 
     region = region if isinstance(region, sublime.Region) else sublime.Region(*region)
     root_node = tree_dict["tree"].root_node
+    injections = tree_dict["injections"]
     s = tree_dict["s"]
 
-    desc = descendant_for_byte_range(root_node, byte_offset(region.begin(), s), byte_offset(region.end(), s))
+    desc = resolve_node_for_range(root_node, injections, byte_offset(region.begin(), s), byte_offset(region.end(), s))
 
     if len(region) == 0:
-        other_desc = descendant_for_byte_range(
+        other_desc = resolve_node_for_range(
             root_node,
+            injections,
             byte_offset(region.begin() - 1, s),
             byte_offset(region.end() - 1, s),
         )
@@ -290,9 +401,12 @@ def get_node_spanning_region(region: sublime.Region | tuple[int, int], buffer_id
     if desc and other_desc:
         # If there are two nodes that match this region, prefer the "deeper" of the two
         return desc if len(get_ancestors(desc)) >= len(get_ancestors(other_desc)) else other_desc
+    return None
 
 
-def get_region_from_node(node: Node, buffer_id_or_view: int | sublime.View, reverse=False) -> sublime.Region:
+def get_region_from_node(
+    node: Node | InjectedNode, buffer_id_or_view: int | sublime.View, reverse=False
+) -> sublime.Region:
     """
     Get `sublime.Region` that exactly spans `node`, for specified `buffer_id_or_view`.
 
@@ -315,26 +429,28 @@ def contains(a: Node, b: Node) -> bool:
     return a.start_byte <= b.start_byte and a.end_byte >= b.end_byte
 
 
-def get_size(node: Node) -> int:
+def get_size(node: Node | InjectedNode) -> int:
     """
     Get size of node in bytes.
     """
     return node.end_byte - node.start_byte
 
 
-def get_larger_ancestor(node: Node) -> Node | None:
+def get_larger_ancestor[NodeT: "Node | InjectedNode"](node: NodeT) -> NodeT | None:
     """
-    Get "first" ancestor of node that's larger than this node.
+    Get "first" ancestor of node that's larger than this node. See `get_ancestors` for `Node` vs. `InjectedNode`, and
+    for why this is untyped internally.
     """
+    current: Any = node
     while True:
-        if not node.parent:
+        if not current.parent:
             return None
-        if get_size(node.parent) > get_size(node):
-            return node.parent
-        node = node.parent
+        if get_size(current.parent) > get_size(current):
+            return current.parent
+        current = current.parent
 
 
-def get_ancestor(region: sublime.Region, view: sublime.View) -> Node | None:
+def get_ancestor(region: sublime.Region, view: sublime.View) -> InjectedNode | None:
     """
     Useful for e.g. expanding selection. Works as follows:
 
@@ -365,30 +481,54 @@ def scroll_to_region(region: sublime.Region, view: sublime.View):
     view.show(region.b)
 
 
-def get_descendant(region: sublime.Region, view: sublime.View) -> Node | None:
+def walk_injected_descendants(node: InjectedNode):
+    """
+    Like `walk_tree`, but via `InjectedNode.children`, so it crosses injection boundaries (see `core.compute_injections`
+    and `InjectedNode`). Used by `get_descendant`, which only ever needs the first smaller descendant of a handful of
+    nodes, not a whole-tree walk, so the extra wrapping overhead compared to `walk_tree`'s cursor-based traversal
+    doesn't matter here.
+    """
+    yield node
+    for child in node.children:
+        yield from walk_injected_descendants(child)
+
+
+def get_descendant(region: sublime.Region, view: sublime.View) -> InjectedNode | None:
     """
     Find node that spans region, then find first descendant that's smaller than this node. This descendant is basically
-    guaranteed to have at least one sibling.
+    guaranteed to have at least one sibling. Crosses injection boundaries (see `core.compute_injections`) via
+    `InjectedNode`.
     """
     if not (tree_dict := get_tree_dict(view.buffer_id())):
-        return
+        return None
 
-    node = get_node_spanning_region(region, view.buffer_id()) or tree_dict["tree"].root_node
-    for desc, _ in walk_tree(node):
-        if get_size(not_none(desc)) < get_size(node):
+    node = get_node_spanning_region(region, view.buffer_id()) or InjectedNode(
+        tree_dict["tree"].root_node, tree_dict["injections"]
+    )
+    for desc in walk_injected_descendants(node):
+        if get_size(desc) < get_size(node):
             return desc
+    return None
 
 
-def get_sibling(region: sublime.Region, view: sublime.View, forward: bool = True) -> Node | None:
+def get_sibling(region: sublime.Region, view: sublime.View, forward: bool = True) -> InjectedNode | None:
     """
     - Find node that spans region
     - Find "first" ancestor of this node, including node itself, that has siblings
         - If node spanning region is root node, find "first" descendant that has siblings
     - Return the next or previous sibling
+
+    Crosses injection boundaries via `InjectedNode` (see `core.compute_injections`). An injected tree's root never
+    appears in any `.children` list (unlike every other node, it doesn't occupy a position among literal siblings in
+    its own tree), so it can't be looked up by "sibling position" at all; the outer node it replaced can, so that's
+    what we look for the sibling of instead.
     """
     node = get_node_spanning_region(region, view.buffer_id())
     if not node:
-        return
+        return None
+
+    while node.raw.parent is None and node.parent is not None:
+        node = node.parent
 
     if not node.parent:
         # We're at root node, so we find the first descendant that has siblings, and return sibling adjacent to region
@@ -414,9 +554,12 @@ def get_sibling(region: sublime.Region, view: sublime.View, forward: bool = True
         else:
             break
 
-    siblings = not_none(node.parent).children
-    idx = siblings.index(node)
+    parent = not_none(node.parent)
+    # Find `node`'s position by comparing raw nodes: `parent.children` (wrapped) auto-descends into an injection at
+    # `node`'s own position (see `InjectedNode.children`), so `parent.children.index(node)` would never find it there
+    idx = parent.raw.children.index(node.raw)
     idx = idx + 1 if forward else idx - 1
+    siblings = parent.children
     return siblings[idx % len(siblings)]
 
 
@@ -439,8 +582,13 @@ def get_cousins(
     - Are at same depth in tree
     - If `same_types` is `True`, have same `type`, and have ancestors of the same `type`s
     - If `same_text` is `True`, have same `text`
+
+    Deliberately doesn't cross injection boundaries (see `core.compute_injections`): "same depth, same type" only
+    means something within one grammar, so this operates on the plain `tree_sitter.Node` (see `InjectedNode`), and
+    only ever finds cousins within whichever single tree - the outer one, or an injected one - `node` belongs to.
     """
-    node = get_node_spanning_region(region, view.buffer_id())
+    wrapped = get_node_spanning_region(region, view.buffer_id())
+    node = wrapped.raw if wrapped else None
     if not node or not node.parent:
         return []
 
@@ -479,11 +627,11 @@ def get_cousins(
     return [cousins[-1]]
 
 
-def get_selected_nodes(view: sublime.View, include_emtpy_regions: bool = False) -> list[Node]:
+def get_selected_nodes(view: sublime.View, include_emtpy_regions: bool = False) -> list[InjectedNode]:
     """
-    Get nodes selected in `view`.
+    Get nodes selected in `view`. Crosses injection boundaries via `InjectedNode` (see `core.compute_injections`).
     """
-    nodes: list[Node] = []
+    nodes: list[InjectedNode] = []
     for region in view.sel():
         if include_emtpy_regions or len(region) > 0:
             node = get_node_spanning_region(region, view.buffer_id())
@@ -522,15 +670,19 @@ def render_node_html(pairs: Iterable[tuple[str, str]]):
     return f'<body id="tree-sitter-node-info">{info_list}<br/><br/>{copy_button}</body>'
 
 
-def get_field_name(node: Node) -> str | None:
+def get_field_name(node: Node | InjectedNode) -> str | None:
     """
     Because there's no `Node.field_name` method or similar.
     """
     if not (parent := node.parent):
-        return
-    for idx, sibling in enumerate(parent.children):
-        if sibling.id == node.id:
-            return parent.field_name_for_child(idx)
+        return None
+    # Compare raw nodes: wrapped `parent.children` auto-descends into an injection at `node`'s own position (see
+    # `InjectedNode.children`), so it would never contain something that equals a wrapped `node` in that case
+    raw_node, raw_parent = unwrap(node), unwrap(parent)
+    for idx, sibling in enumerate(raw_parent.children):
+        if sibling.id == raw_node.id:
+            return raw_parent.field_name_for_child(idx)
+    return None
 
 
 def show_node_under_selection(view: sublime.View, select: bool, **kwargs):
@@ -1074,7 +1226,8 @@ class TreeSitterQuerySymbolCommand(sublime_plugin.WindowCommand):
             query_s = f"(({query_s}) @definition.query)"
         self.query_s = query_s
 
-        nodes = get_selected_nodes(view) or [tree_dict["tree"].root_node]
+        # `get_captures_from_nodes` doesn't search injected trees yet, so unwrap to plain `tree_sitter.Node`s
+        nodes = [n.raw for n in get_selected_nodes(view)] or [tree_dict["tree"].root_node]
         if captures := get_captures_from_nodes(nodes, view, query_s):
             goto_captures(captures, view)
 
@@ -1095,7 +1248,9 @@ class TreeSitterPrintTreeCommand(sublime_plugin.TextCommand):
             return
 
         parts: list[str] = []
-        for root_node in get_selected_nodes(self.view) or [tree_dict["tree"].root_node]:
+        # `format_injected_tree` splices in injected trees itself (see `get_injection_for_node`), so it wants plain
+        # `tree_sitter.Node`s, not `InjectedNode`s
+        for root_node in [n.raw for n in get_selected_nodes(self.view)] or [tree_dict["tree"].root_node]:
             while root_node.parent and get_size(root_node) == get_size(root_node.parent):
                 # Move to "shallowest" ancestor with the same size as node spanning region
                 root_node = root_node.parent

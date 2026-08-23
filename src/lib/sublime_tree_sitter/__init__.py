@@ -7,6 +7,7 @@ Example usage: `from sublime_tree_sitter import get_tree_dict`
 from TreeSitter.src.api import (  # type: ignore
     BreadcrumbDict,
     CaptureDict,
+    InjectedNode,
     contains,
     format_breadcrumbs,
     get_ancestor,
@@ -39,6 +40,7 @@ from TreeSitter.src.core import TreeDict  # type: ignore
 __all__ = [
     "BreadcrumbDict",
     "CaptureDict",
+    "InjectedNode",
     "TreeDict",
     "contains",
     "format_breadcrumbs",

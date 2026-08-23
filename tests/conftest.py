@@ -18,7 +18,7 @@ import pytest
 
 # Kept small on purpose: instantiating a language downloads and caches its parser from `tree_sitter_language_pack`
 # over the network the first time, so tests only pull in what they actually exercise.
-LANGUAGES = ["python", "javascript"]
+LANGUAGES = ["python", "javascript", "markdown"]
 
 
 def _install_sublime_stubs():
@@ -30,6 +30,25 @@ def _install_sublime_stubs():
 
     class View: ...
 
+    class Region:
+        """Minimal stand-in: just enough for `begin`/`end`/`len`/construction, as used by `api.py`."""
+
+        def __init__(self, a, b=None):
+            self.a = a
+            self.b = a if b is None else b
+
+        def begin(self):
+            return min(self.a, self.b)
+
+        def end(self):
+            return max(self.a, self.b)
+
+        def __len__(self):
+            return abs(self.b - self.a)
+
+        def __eq__(self, other):
+            return isinstance(other, Region) and (self.a, self.b) == (other.a, other.b)
+
     class KindId:
         AMBIGUOUS = "ambiguous"
         COLOR_DARK = "color_dark"
@@ -39,6 +58,7 @@ def _install_sublime_stubs():
         VARIABLE = "variable"
 
     sublime.View = View  # type: ignore[attr-defined]
+    sublime.Region = Region  # type: ignore[attr-defined]
     sublime.KindId = KindId  # type: ignore[attr-defined]
     sublime.Kind = tuple  # type: ignore[attr-defined]  # only ever used as a type annotation
     sublime.active_window = lambda: None  # type: ignore[attr-defined]  # tests override this when they need a view

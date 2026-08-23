@@ -40,6 +40,13 @@
     "command": "tree_sitter_goto_symbol",
   },
   {
+    "caption": "TreeSitter: Goto Symbol (In Selection)",
+    "command": "tree_sitter_goto_symbol",
+    "args": {
+      "in_selection": true,
+    }
+  },
+  {
     "caption": "TreeSitter: Query Symbol",
     "command": "tree_sitter_query_symbol",
   },

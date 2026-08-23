@@ -1409,9 +1409,14 @@ class TreeSitterGotoSymbolCommand(sublime_plugin.TextCommand):
         queries_path: str = "",
         symbols_file: str = SYMBOLS_FILE,
         ignore_file_not_found=True,
+        in_selection = False,
     ):
         if not (tree_dict := get_tree_dict(self.view.buffer_id())):
             return self.fallback()
+
+        nodes: list[Node | InjectedNode] = [tree_dict["tree"].root_node]
+        if in_selection and (selected_nodes := get_selected_nodes(self.view)):
+            nodes = [*selected_nodes]
 
         query_s = get_query_s_from_file(
             queries_name=get_scope_to_queries_name(mutable_settings.d)[tree_dict["scope"]],
@@ -1420,9 +1425,7 @@ class TreeSitterGotoSymbolCommand(sublime_plugin.TextCommand):
             ignore_file_not_found=ignore_file_not_found,
         ) or get_tags_query_s(get_scope_to_language_name(mutable_settings.d)[tree_dict["scope"]])
 
-        captures = get_captures_from_nodes(
-            [tree_dict["tree"].root_node], self.view, query_s, queries_path, symbols_file
-        )
+        captures = get_captures_from_nodes(nodes, self.view, query_s, queries_path, symbols_file)
         if captures:
             return goto_captures(captures, self.view)
 

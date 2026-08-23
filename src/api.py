@@ -32,7 +32,7 @@ from .utils import (
 )
 
 if TYPE_CHECKING:
-    from tree_sitter import Node, Tree
+    from tree_sitter import Language, Node, Tree
 
     from .core import Injection
 
@@ -96,27 +96,25 @@ def get_tree_from_code(scope: str, s: str | bytes):
     return parser.parse(s.encode() if isinstance(s, str) else s)
 
 
-def query_node_with_s(scope: str | None, node: Node | InjectedNode, query_s: str):
+def query_node_with_language(language: Language, node: Node | InjectedNode, query_s: str):
     """
-    Query a node with `query_s`. Returns `(node, capture_name)` tuples, in the same document order in which their
-    matches were found, i.e. an ancestor's captures always come before its descendants'. This ordering is relied on by
-    `get_captures_from_nodes`, e.g. to build symbol breadcrumbs, since a node's breadcrumb ancestors must already have
-    been seen by the time the node itself is processed.
+    Query a node with `query_s`, against `language` directly (see `query_node_with_s` for the scope-based version,
+    used for a buffer's own top-level language; this one also backs symbol search in injected trees, each of which
+    has its own `Language` - see `get_captures_from_injections`). Returns `(node, capture_name)` tuples, in the same
+    document order in which their matches were found, i.e. an ancestor's captures always come before its
+    descendants'. This ordering is relied on by `get_captures_from_nodes`, e.g. to build symbol breadcrumbs, since a
+    node's breadcrumb ancestors must already have been seen by the time the node itself is processed.
 
     Note `QueryCursor.captures` doesn't preserve this ordering (it groups all captures by capture name), so we build
     this list from `QueryCursor.matches` instead.
 
     `QueryCursor.matches` needs a real `tree_sitter.Node`, so `node` is unwrapped if it's an `InjectedNode` (see
-    `unwrap`). This means a query never searches inside injected trees yet - see `core.compute_injections`'s module
-    docstring.
+    `unwrap`).
 
     See https://github.com/tree-sitter/py-tree-sitter#pattern-matching
     """
     from tree_sitter import Query, QueryCursor
 
-    if not (scope := check_scope(scope)):
-        return
-    language = SCOPE_TO_LANGUAGE[scope]
     cursor = QueryCursor(Query(language, query_s))
     return [
         (captured_node, name)
@@ -124,6 +122,16 @@ def query_node_with_s(scope: str | None, node: Node | InjectedNode, query_s: str
         for name, nodes in captures.items()
         for captured_node in nodes
     ]
+
+
+def query_node_with_s(scope: str | None, node: Node | InjectedNode, query_s: str):
+    """
+    `query_node_with_language`, resolving `Language` from a Sublime scope (see `SCOPE_TO_LANGUAGE`) rather than
+    taking one directly.
+    """
+    if not (scope := check_scope(scope)):
+        return
+    return query_node_with_language(SCOPE_TO_LANGUAGE[scope], node, query_s)
 
 
 def get_query_s_from_file(
@@ -830,23 +838,22 @@ class CaptureDict(TypedDict):
     breadcrumb: BreadcrumbDict | None
 
 
-def get_captures_from_nodes(nodes: list[Node | InjectedNode], view: sublime.View, query_s: str) -> list[CaptureDict]:
+def get_captures_from_nodes_with_language(
+    nodes: list[Node | InjectedNode], language: Language, query_s: str
+) -> list[CaptureDict]:
     """
-    Get capture tuples from search nodes. Capture tuples include captured ancestors for rendering breadcrumbs.
-
-    `nodes` may be `InjectedNode`s (e.g. from `get_selected_nodes`); `query_node_with_s` unwraps them, so this never
-    searches inside further injected trees - see `core.compute_injections`'s module docstring.
+    `get_captures_from_nodes`, querying against `language` directly rather than resolving one from a view's buffer -
+    used for symbol search in injected trees, each of which has its own `Language` (see
+    `get_captures_from_injections`). Breadcrumbs are only ever built from ancestors within `language`'s own tree
+    (`get_ancestors(container)`, not crossing injection boundaries - see `InjectedNode`), so a symbol found inside an
+    injected tree gets breadcrumbs from that tree alone, never stitched to the outer document's structure.
     """
-
-    if not (tree_dict := get_tree_dict(view.buffer_id())):
-        return []
-
     container_id_to_breadcrumb: dict[int, BreadcrumbDict] = {}
     node_id_to_breadcrumb_depth: dict[int, int] = {}
     captures: list[CaptureDict] = []
 
     for search_node in nodes:
-        query_captures = query_node_with_s(tree_dict["scope"], search_node, query_s)
+        query_captures = query_node_with_language(language, search_node, query_s)
 
         # Do a first pass through captured nodes to see which ones are "breadcrumbs"
         for captured_node, capture_name in query_captures or []:
@@ -882,6 +889,85 @@ def get_captures_from_nodes(nodes: list[Node | InjectedNode], view: sublime.View
                 )
             )
 
+    return captures
+
+
+def get_captures_from_nodes(nodes: list[Node | InjectedNode], view: sublime.View, query_s: str) -> list[CaptureDict]:
+    """
+    Get capture tuples from search nodes, querying against the buffer's own top-level language. Capture tuples
+    include captured ancestors for rendering breadcrumbs.
+
+    Doesn't search inside injected trees (see `core.compute_injections`): use `get_all_captures` for that.
+    """
+    if not (tree_dict := get_tree_dict(view.buffer_id())):
+        return []
+    return get_captures_from_nodes_with_language(nodes, SCOPE_TO_LANGUAGE[tree_dict["scope"]], query_s)
+
+
+def get_captures_from_injections(
+    injections: list[Injection],
+    queries_path: str = "",
+    symbols_file: str = SYMBOLS_FILE,
+) -> list[CaptureDict]:
+    """
+    Recursively search every language injected into a tree (transitively - see `core.compute_injections`) for
+    symbols, resolving a query per injected language the same way as the top-level tree: a user-supplied or
+    bundled `symbols.scm` first (`get_query_s_from_file`), then `tree_sitter_language_pack`'s "tags" query
+    (`get_tags_query_s`) if that's unavailable.
+
+    A language with neither is skipped (not every embedded snippet has, or needs, an outline); a query that exists
+    but fails - a bad bundled/user query, or one of `tree_sitter_language_pack`'s occasional bad ones (see
+    `core.get_injections_query`'s docstring) - is logged and skipped, rather than losing symbols from the rest of the
+    tree over one broken injection.
+    """
+    captures: list[CaptureDict] = []
+
+    for injection in injections:
+        language_name = injection["language_name"]
+        query_s = get_query_s_from_file(
+            language_name, queries_path, symbols_file, ignore_file_not_found=True
+        ) or get_tags_query_s(language_name)
+
+        if query_s:
+            try:
+                captures.extend(
+                    get_captures_from_nodes_with_language(
+                        [injection["tree"].root_node],
+                        injection["tree"].language,
+                        query_s,
+                    )
+                )
+            except Exception as e:
+                log(f'error querying injected "{language_name}" tree for symbols: {e}')
+
+        captures.extend(get_captures_from_injections(injection["children"], queries_path, symbols_file))
+
+    return captures
+
+
+def get_all_captures(
+    tree_dict,
+    view: sublime.View,
+    queries_path: str = "",
+    symbols_file: str = SYMBOLS_FILE,
+    ignore_file_not_found: bool = True,
+) -> list[CaptureDict]:
+    """
+    Get captures for `tree_dict`'s own tree, plus every language injected into it, transitively (see
+    `core.compute_injections` and `get_captures_from_injections`). Used by `TreeSitterGotoSymbolCommand` and
+    `TreeSitterSelectSymbolsCommand` so both search the whole document, not just its top-level language.
+    """
+    resolved_queries_path = queries_path or get_queries_path(mutable_settings.d)
+
+    query_s = get_query_s_from_file(
+        queries_name=get_scope_to_queries_name(mutable_settings.d)[tree_dict["scope"]],
+        queries_path=resolved_queries_path,
+        symbols_file=symbols_file,
+        ignore_file_not_found=ignore_file_not_found,
+    ) or get_tags_query_s(get_scope_to_language_name(mutable_settings.d)[tree_dict["scope"]])
+
+    captures = get_captures_from_nodes([tree_dict["tree"].root_node], view, query_s) if query_s else []
+    captures.extend(get_captures_from_injections(tree_dict["injections"], resolved_queries_path, symbols_file))
     return captures
 
 
@@ -1179,10 +1265,12 @@ class TreeSitterSelectDescendantCommand(sublime_plugin.TextCommand):
 
 class TreeSitterSelectSymbolsCommand(sublime_plugin.TextCommand):
     """
-    Select symbol from current buffer captured by tree sitter query.
+    Select symbol from current buffer captured by tree sitter query, including symbols in every language injected
+    into it (transitively - see `core.compute_injections` and `get_all_captures`).
 
-    If this plugin doesn't ship (and the user hasn't supplied) a `symbols.scm` for the buffer's language, falls back
-    to the "tags" query `tree_sitter_language_pack` bundles for it: see `get_tags_query_s`.
+    If this plugin doesn't ship (and the user hasn't supplied) a `symbols.scm` for a given language (the buffer's own,
+    or an injected one), falls back to the "tags" query `tree_sitter_language_pack` bundles for it: see
+    `get_tags_query_s`.
     """
 
     def run(
@@ -1196,13 +1284,8 @@ class TreeSitterSelectSymbolsCommand(sublime_plugin.TextCommand):
         if not (tree_dict := get_tree_dict(self.view.buffer_id())):
             return
 
-        query_s = get_query_s_from_file(
-            queries_name=get_scope_to_queries_name(mutable_settings.d)[tree_dict["scope"]],
-            queries_path=queries_path or get_queries_path(mutable_settings.d),
-            symbols_file=symbols_file,
-            ignore_file_not_found=ignore_file_not_found,
-        ) or get_tags_query_s(get_scope_to_language_name(mutable_settings.d)[tree_dict["scope"]])
-        if captures := get_captures_from_nodes([tree_dict["tree"].root_node], self.view, query_s=query_s):
+        captures = get_all_captures(tree_dict, self.view, queries_path, symbols_file, ignore_file_not_found)
+        if captures:
             sel = self.view.sel()
             sel.clear()
             for capture in captures:
@@ -1211,11 +1294,16 @@ class TreeSitterSelectSymbolsCommand(sublime_plugin.TextCommand):
 
 class TreeSitterGotoSymbolCommand(sublime_plugin.TextCommand):
     """
-    Render goto options for symbols in current buffer captured by tree sitter query.
+    Render goto options for symbols in current buffer captured by tree sitter query, including symbols in every
+    language injected into it (transitively - see `core.compute_injections` and `get_all_captures`).
 
-    If this plugin doesn't ship (and the user hasn't supplied) a `symbols.scm` for the buffer's language, falls back
-    to the "tags" query `tree_sitter_language_pack` bundles for it (see `get_tags_query_s`); if that's unavailable
-    either, or the query returns no captures, falls back to Sublime's own built-in goto command.
+    If this plugin doesn't ship (and the user hasn't supplied) a `symbols.scm` for a given language (the buffer's own,
+    or an injected one), falls back to the "tags" query `tree_sitter_language_pack` bundles for it (see
+    `get_tags_query_s`); if that's unavailable either, or no captures turn up anywhere, falls back to Sublime's own
+    built-in goto command.
+
+    Symbols found inside an injected tree only ever get breadcrumbs from within that same tree, never stitched to the
+    outer document's structure - see `get_captures_from_nodes_with_language`.
 
     TODO: our own `symbols.scm` convention diverges from the community-standard "tags" convention `get_tags_query_s`
     sources from (also used by e.g. GitHub's semantic, and ctags-like tooling generally): our `@definition.<kind>` goes
@@ -1241,13 +1329,8 @@ class TreeSitterGotoSymbolCommand(sublime_plugin.TextCommand):
         if not (tree_dict := get_tree_dict(self.view.buffer_id())):
             return self.fallback()
 
-        query_s = get_query_s_from_file(
-            queries_name=get_scope_to_queries_name(mutable_settings.d)[tree_dict["scope"]],
-            queries_path=queries_path or get_queries_path(mutable_settings.d),
-            symbols_file=symbols_file,
-            ignore_file_not_found=ignore_file_not_found,
-        ) or get_tags_query_s(get_scope_to_language_name(mutable_settings.d)[tree_dict["scope"]])
-        if captures := get_captures_from_nodes([tree_dict["tree"].root_node], self.view, query_s=query_s):
+        captures = get_all_captures(tree_dict, self.view, queries_path, symbols_file, ignore_file_not_found)
+        if captures:
             return goto_captures(captures, self.view)
 
         self.fallback()
@@ -1255,7 +1338,7 @@ class TreeSitterGotoSymbolCommand(sublime_plugin.TextCommand):
 
 class TreeSitterQuerySymbolCommand(sublime_plugin.WindowCommand):
     """
-    Prompt user to input a query string, and search buffer for symbols matching query string.
+    Prompt user to input a query string, and search buffer for symbols matching query string. Mainly for debugging. Doesn't search injected trees.
     """
 
     query_s = ""  # So this can be cached and reused

@@ -23,7 +23,9 @@ they need to be installed with `uv sync`, run from this plugin's directory, befo
 
 It supports nested syntax trees ("injections"), e.g. JS code in `<script>` tags in HTML docs, or code in fenced
 Markdown code blocks: see `compute_injections` below. Point/region lookups (`get_node_spanning_region` and everything
-built on it: select ancestor/sibling/cousin/descendant, goto/select symbol) don't descend into injected trees yet.
+built on it: select ancestor/sibling/descendant, show node under selection - see `api.InjectedNode`) and symbol
+queries (goto/select symbol - see `api.get_all_captures`) both descend into injected trees. `get_cousins` doesn't
+("same depth, same type" only means something within one grammar).
 
 It has the following limitations:
 

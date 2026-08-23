@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+import types
 
 import tree_sitter_language_pack as tslp
 from tree_sitter import Parser
@@ -133,3 +134,96 @@ def test_get_injected_language_only_downloaded_self_heals_in_background(monkeypa
 
     assert _wait_until(lambda: name in core.LANGUAGE_NAME_TO_INJECTED_LANGUAGE)
     assert _wait_until(lambda: name not in core.INJECTED_LANGUAGES_DOWNLOADING)
+
+
+MARKDOWN_WITH_SYMBOLS = """# Doc
+
+```python
+class Greeter:
+    def greet(self):
+        pass
+```
+
+```go
+func Add(a int, b int) int {
+    return a + b
+}
+```
+
+```toml
+[section]
+key = "value"
+```
+"""
+
+
+def _make_markdown_tree_dict(monkeypatch, code: str = MARKDOWN_WITH_SYMBOLS):
+    tree = core.parse(Parser(), "text.html.markdown", code)
+    tree_dict = core.make_tree_dict(tree, code, "text.html.markdown")
+    monkeypatch.setattr(api, "get_tree_dict", lambda buffer_id: tree_dict)
+    return tree_dict
+
+
+def test_get_all_captures_finds_symbols_in_injected_python_with_breadcrumbs(monkeypatch):
+    """
+    `python` has a bundled `queries/python/symbols.scm` (checked first, ahead of tree_sitter_language_pack's "tags"
+    query), which has `@breadcrumb.N` pragmas - so a symbol found inside an injected Python tree gets breadcrumbs from
+    that tree, exactly as if it were a real top-level Python buffer.
+    """
+    tree_dict = _make_markdown_tree_dict(monkeypatch)
+    fake_view = types.SimpleNamespace(buffer_id=lambda: 1)
+
+    captures = api.get_all_captures(tree_dict, fake_view)
+
+    by_text = {c["node"].text: c for c in captures}
+    assert by_text[b"Greeter"]["name"] == "definition.class"
+    assert by_text[b"greet"]["name"] == "definition.function"
+    assert [b["node"].text for b in by_text[b"greet"]["breadcrumbs"]] == [b"Greeter"]
+
+
+def test_get_all_captures_falls_back_to_tags_query_for_injected_go(monkeypatch):
+    """
+    `go` has no bundled `symbols.scm`, but tree_sitter_language_pack ships a "tags" query for it - so this still finds
+    the function, just without breadcrumbs (see `get_tags_query_s`).
+    """
+    tree_dict = _make_markdown_tree_dict(monkeypatch)
+    fake_view = types.SimpleNamespace(buffer_id=lambda: 1)
+
+    captures = api.get_all_captures(tree_dict, fake_view)
+
+    # Unlike this plugin's own symbols.scm convention, the go tags query captures the whole function_declaration
+    # node under @definition.function, not just its name
+    go_functions = [c for c in captures if c["name"] == "definition.function" and b"Add" in (c["node"].text or b"")]
+    assert len(go_functions) == 1
+    assert go_functions[0]["breadcrumbs"] == []
+
+
+def test_get_all_captures_skips_injected_language_with_no_query(monkeypatch):
+    # `toml` has neither a bundled `symbols.scm` nor a tree_sitter_language_pack "tags" query
+    tree_dict = _make_markdown_tree_dict(monkeypatch)
+    fake_view = types.SimpleNamespace(buffer_id=lambda: 1)
+
+    captures = api.get_all_captures(tree_dict, fake_view)
+
+    assert not any(b"section" in (c["node"].text or b"") for c in captures)
+
+
+def test_get_all_captures_skips_broken_injected_query_without_losing_others(monkeypatch):
+    """
+    A bad query for one injected language (this happens in practice - see core.get_injections_query's docstring)
+    shouldn't lose symbols from the rest of the tree.
+    """
+    tree_dict = _make_markdown_tree_dict(monkeypatch)
+    fake_view = types.SimpleNamespace(buffer_id=lambda: 1)
+
+    real_get_tags_query_s = api.get_tags_query_s
+    monkeypatch.setattr(
+        api,
+        "get_tags_query_s",
+        lambda name: "(not valid tree-sitter query" if name == "go" else real_get_tags_query_s(name),
+    )
+
+    captures = api.get_all_captures(tree_dict, fake_view)
+
+    assert not any(b"Add" in (c["node"].text or b"") for c in captures)  # the broken "go" query is skipped...
+    assert any(c["node"].text == b"Greeter" for c in captures)  # ...but python symbols still come through

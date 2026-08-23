@@ -169,6 +169,22 @@ def get_query_s_from_file(
     return "\n".join([query_s, *queries])
 
 
+def get_tags_query_s(language_name: str) -> str:
+    """
+    Fall back to the "tags" query `tree_sitter_language_pack` bundles for `language_name`, when this plugin doesn't
+    ship (and the user hasn't supplied) a `symbols.scm` for it. This is the community-standard convention for a
+    language-agnostic symbol outline (also used by e.g. GitHub's semantic, and ctags-like tooling generally): its
+    `@definition.class`/`@definition.function`/... captures already match `CAPTURE_NAME_PREFIX`/`CAPTURE_NAME_TO_KIND`
+    here, so goto/select symbol works with no changes, just without breadcrumbs (`tags.scm` has no equivalent of this
+    plugin's `@breadcrumb.N` pragma - see `TreeSitterGotoSymbolCommand`).
+    """
+    try:
+        from tree_sitter_language_pack import get_tags_query
+    except ImportError:
+        return ""
+    return get_tags_query(language_name) or ""
+
+
 def walk_tree(tree_or_node: Tree | Node, max_depth: int | None = None):
     """
     Walk all the nodes under `tree_or_node`.
@@ -1164,6 +1180,9 @@ class TreeSitterSelectDescendantCommand(sublime_plugin.TextCommand):
 class TreeSitterSelectSymbolsCommand(sublime_plugin.TextCommand):
     """
     Select symbol from current buffer captured by tree sitter query.
+
+    If this plugin doesn't ship (and the user hasn't supplied) a `symbols.scm` for the buffer's language, falls back
+    to the "tags" query `tree_sitter_language_pack` bundles for it: see `get_tags_query_s`.
     """
 
     def run(
@@ -1182,7 +1201,7 @@ class TreeSitterSelectSymbolsCommand(sublime_plugin.TextCommand):
             queries_path=queries_path or get_queries_path(mutable_settings.d),
             symbols_file=symbols_file,
             ignore_file_not_found=ignore_file_not_found,
-        )
+        ) or get_tags_query_s(get_scope_to_language_name(mutable_settings.d)[tree_dict["scope"]])
         if captures := get_captures_from_nodes([tree_dict["tree"].root_node], self.view, query_s=query_s):
             sel = self.view.sel()
             sel.clear()
@@ -1194,8 +1213,18 @@ class TreeSitterGotoSymbolCommand(sublime_plugin.TextCommand):
     """
     Render goto options for symbols in current buffer captured by tree sitter query.
 
-    If query returns no captures, or query file for this language/path doesn't exist, fall back to built-in goto
-    command.
+    If this plugin doesn't ship (and the user hasn't supplied) a `symbols.scm` for the buffer's language, falls back
+    to the "tags" query `tree_sitter_language_pack` bundles for it (see `get_tags_query_s`); if that's unavailable
+    either, or the query returns no captures, falls back to Sublime's own built-in goto command.
+
+    TODO: our own `symbols.scm` convention diverges from the community-standard "tags" convention `get_tags_query_s`
+    sources from (also used by e.g. GitHub's semantic, and ctags-like tooling generally): our `@definition.<kind>` goes
+    on the identifier plus an explicit `@breadcrumb.N` pragma to find its container, where the standard convention puts
+    `@definition.<kind>` on the whole definition node, with a separate `@name` for the identifier, and no breadcrumb
+    pragma at all (breadcrumbs fall out structurally, since a definition's container is just its nearest ancestor
+    that's also a definition - no depth counting needed). Worth eventually reconciling: dropping `@breadcrumb.N` in
+    favor of that structural approach if it reproduces today's breadcrumb behavior, renaming `symbols.scm` files to
+    `tags.scm`, and making use of `@name`/`@reference.call` where it'd help (e.g. find-references).
     """
 
     def fallback(self):
@@ -1217,7 +1246,7 @@ class TreeSitterGotoSymbolCommand(sublime_plugin.TextCommand):
             queries_path=queries_path or get_queries_path(mutable_settings.d),
             symbols_file=symbols_file,
             ignore_file_not_found=ignore_file_not_found,
-        )
+        ) or get_tags_query_s(get_scope_to_language_name(mutable_settings.d)[tree_dict["scope"]])
         if captures := get_captures_from_nodes([tree_dict["tree"].root_node], self.view, query_s=query_s):
             return goto_captures(captures, self.view)
 

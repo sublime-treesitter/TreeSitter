@@ -129,3 +129,39 @@ def test_get_field_name():
     right = assignment.child_by_field_name("right")
     assert api.get_field_name(left) == "left"
     assert api.get_field_name(right) == "right"
+
+
+def test_get_tags_query_s_returns_bundled_query_when_available():
+    query_s = api.get_tags_query_s("python")
+    assert "@definition.function" in query_s
+    assert "@definition.class" in query_s
+
+
+def test_get_tags_query_s_empty_when_unavailable():
+    # `markdown` doesn't ship a tags query in tree_sitter_language_pack
+    assert api.get_tags_query_s("markdown") == ""
+    assert api.get_tags_query_s("not-a-real-language") == ""
+
+
+def test_get_captures_from_nodes_falls_back_to_tags_query(monkeypatch):
+    """
+    `get_tags_query_s`'s captures (`@definition.function` on the whole node) already match `CAPTURE_NAME_PREFIX`, so
+    goto/select symbol works via the community "tags" convention with no other changes, just without breadcrumbs.
+    """
+    code = "def f():\n    pass\n"
+    root = _parse("source.python", code)
+    query_s = api.get_tags_query_s("python")
+
+    tree_dict = core.make_tree_dict(tree=types.SimpleNamespace(root_node=root), s=code, scope="source.python")
+    monkeypatch.setattr(api, "get_tree_dict", lambda buffer_id: tree_dict)
+
+    fake_view = types.SimpleNamespace(buffer_id=lambda: 1)
+    captures = api.get_captures_from_nodes([root], fake_view, query_s)
+
+    assert len(captures) == 1
+    assert captures[0]["name"] == "definition.function"
+    # Unlike this plugin's own symbols.scm convention, tags.scm's @definition.<kind> captures the whole definition
+    # node, not just its identifier - @name captures that separately (and is ignored here, since it isn't a
+    # "definition.*" capture)
+    assert captures[0]["node"].type == "function_definition"
+    assert captures[0]["breadcrumb"] is None  # tags.scm has no @breadcrumb.N pragma

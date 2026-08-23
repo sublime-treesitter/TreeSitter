@@ -105,6 +105,7 @@ class MyTreeSitterListener(sublime_plugin.EventListener):
 - A scope also maps to a queries file
     - Different scopes with the same syntax can map to different queries files
     - This way the plugin can index different symbols in e.g. `.ts` and `.test.ts` files
+- If this plugin doesn't ship (and you haven't supplied) a `symbols.scm` for a language, we fall back to the "tags" query `tree_sitter_language_pack` bundles for it, then to Sublime's built-in goto
 
 ### Languages
 

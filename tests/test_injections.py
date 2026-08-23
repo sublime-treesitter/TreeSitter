@@ -8,7 +8,7 @@ from tree_sitter import Parser
 from tree_sitter_language_pack import get_language
 
 from src import api, core
-from src.utils import not_none
+from src.utils import get_scope_to_language_name, get_scope_to_queries_name, not_none
 
 MARKDOWN_CODE = b"""\
 This is `code`, <https://abc.com>, [link](https://abc.com)
@@ -164,7 +164,18 @@ def _make_markdown_tree_dict(monkeypatch, code: str = MARKDOWN_WITH_SYMBOLS):
     return tree_dict
 
 
-def test_get_all_captures_finds_symbols_in_injected_python_with_breadcrumbs(monkeypatch):
+def _resolve_query_s(tree_dict) -> str:
+    """
+    Mirrors the query resolution `TreeSitterGotoSymbolCommand`/`TreeSitterSelectSymbolsCommand` do inline before
+    calling `get_captures_from_nodes`: a bundled/user `symbols.scm` first, else `tree_sitter_language_pack`'s "tags"
+    query.
+    """
+    return api.get_query_s_from_file(
+        get_scope_to_queries_name()[tree_dict["scope"]], ignore_file_not_found=True
+    ) or api.get_tags_query_s(get_scope_to_language_name()[tree_dict["scope"]])
+
+
+def test_get_captures_from_nodes_finds_symbols_in_injected_python_with_breadcrumbs(monkeypatch):
     """
     `python` has a bundled `queries/python/symbols.scm` (checked first, ahead of tree_sitter_language_pack's "tags"
     query), which has `@breadcrumb.N` pragmas - so a symbol found inside an injected Python tree gets breadcrumbs from
@@ -173,7 +184,7 @@ def test_get_all_captures_finds_symbols_in_injected_python_with_breadcrumbs(monk
     tree_dict = _make_markdown_tree_dict(monkeypatch)
     fake_view = types.SimpleNamespace(buffer_id=lambda: 1)
 
-    captures = api.get_all_captures(tree_dict, fake_view)
+    captures = api.get_captures_from_nodes([tree_dict["tree"].root_node], fake_view, _resolve_query_s(tree_dict))
 
     by_text = {c["node"].text: c for c in captures}
     assert by_text[b"Greeter"]["name"] == "definition.class"
@@ -181,7 +192,7 @@ def test_get_all_captures_finds_symbols_in_injected_python_with_breadcrumbs(monk
     assert [b["node"].text for b in by_text[b"greet"]["breadcrumbs"]] == [b"Greeter"]
 
 
-def test_get_all_captures_falls_back_to_tags_query_for_injected_go(monkeypatch):
+def test_get_captures_from_nodes_falls_back_to_tags_query_for_injected_go(monkeypatch):
     """
     `go` has no bundled `symbols.scm`, but tree_sitter_language_pack ships a "tags" query for it - so this still finds
     the function, just without breadcrumbs (see `get_tags_query_s`).
@@ -189,7 +200,7 @@ def test_get_all_captures_falls_back_to_tags_query_for_injected_go(monkeypatch):
     tree_dict = _make_markdown_tree_dict(monkeypatch)
     fake_view = types.SimpleNamespace(buffer_id=lambda: 1)
 
-    captures = api.get_all_captures(tree_dict, fake_view)
+    captures = api.get_captures_from_nodes([tree_dict["tree"].root_node], fake_view, _resolve_query_s(tree_dict))
 
     # Unlike this plugin's own symbols.scm convention, the go tags query captures the whole function_declaration
     # node under @definition.function, not just its name
@@ -198,17 +209,17 @@ def test_get_all_captures_falls_back_to_tags_query_for_injected_go(monkeypatch):
     assert go_functions[0]["breadcrumbs"] == []
 
 
-def test_get_all_captures_skips_injected_language_with_no_query(monkeypatch):
+def test_get_captures_from_nodes_skips_injected_language_with_no_query(monkeypatch):
     # `toml` has neither a bundled `symbols.scm` nor a tree_sitter_language_pack "tags" query
     tree_dict = _make_markdown_tree_dict(monkeypatch)
     fake_view = types.SimpleNamespace(buffer_id=lambda: 1)
 
-    captures = api.get_all_captures(tree_dict, fake_view)
+    captures = api.get_captures_from_nodes([tree_dict["tree"].root_node], fake_view, _resolve_query_s(tree_dict))
 
     assert not any(b"section" in (c["node"].text or b"") for c in captures)
 
 
-def test_get_all_captures_skips_broken_injected_query_without_losing_others(monkeypatch):
+def test_get_captures_from_nodes_skips_broken_injected_query_without_losing_others(monkeypatch):
     """
     A bad query for one injected language (this happens in practice - see core.get_injections_query's docstring)
     shouldn't lose symbols from the rest of the tree.
@@ -223,7 +234,114 @@ def test_get_all_captures_skips_broken_injected_query_without_losing_others(monk
         lambda name: "(not valid tree-sitter query" if name == "go" else real_get_tags_query_s(name),
     )
 
-    captures = api.get_all_captures(tree_dict, fake_view)
+    captures = api.get_captures_from_nodes([tree_dict["tree"].root_node], fake_view, _resolve_query_s(tree_dict))
 
     assert not any(b"Add" in (c["node"].text or b"") for c in captures)  # the broken "go" query is skipped...
     assert any(c["node"].text == b"Greeter" for c in captures)  # ...but python symbols still come through
+
+
+MARKDOWN_HEADINGS = """# H1
+
+## H2a
+
+### H3a
+
+#### H4a
+
+## H2b
+
+### H3b
+"""
+
+
+def test_get_captures_from_nodes_indexes_markdown_headings_with_structural_breadcrumbs(monkeypatch):
+    """
+    Headings nest by number and document order (see `compute_heading_breadcrumbs`), without this plugin's own
+    `@breadcrumb.N` pragma (queries/markdown/symbols.scm deliberately has none) - multi-level nesting (h4 under h3
+    under h2 under h1) falls out for free, and a sibling heading (the second h2) doesn't nest under the first one's
+    subtree.
+    """
+    tree_dict = _make_markdown_tree_dict(monkeypatch, MARKDOWN_HEADINGS)
+    fake_view = types.SimpleNamespace(buffer_id=lambda: 1)
+
+    captures = api.get_captures_from_nodes([tree_dict["tree"].root_node], fake_view, _resolve_query_s(tree_dict))
+    by_text = {c["node"].text: c for c in captures}
+
+    assert {c["name"] for c in captures} == {"definition.h1", "definition.h2", "definition.h3", "definition.h4"}
+
+    assert by_text[b"H1"]["breadcrumbs"] == []
+    assert [b["node"].text for b in by_text[b"H2a"]["breadcrumbs"]] == [b"H1"]
+    assert [b["node"].text for b in by_text[b"H3a"]["breadcrumbs"]] == [b"H2a", b"H1"]
+    assert [b["node"].text for b in by_text[b"H4a"]["breadcrumbs"]] == [b"H3a", b"H2a", b"H1"]
+
+    # The second h2 is a *sibling* of the first, not nested under H3a/H4a
+    assert [b["node"].text for b in by_text[b"H2b"]["breadcrumbs"]] == [b"H1"]
+    assert [b["node"].text for b in by_text[b"H3b"]["breadcrumbs"]] == [b"H2b", b"H1"]
+
+    # Every heading is itself a valid breadcrumb container (any heading can have nested subheadings)
+    h2a_breadcrumb = not_none(by_text[b"H2a"]["breadcrumb"])
+    assert h2a_breadcrumb["node"].text == b"H2a"
+    assert h2a_breadcrumb["container"].type == "section"
+    assert api.contains(h2a_breadcrumb["container"], by_text[b"H3a"]["node"])
+    assert api.contains(h2a_breadcrumb["container"], by_text[b"H4a"]["node"])
+    assert not api.contains(h2a_breadcrumb["container"], by_text[b"H2b"]["node"])
+
+
+def test_get_captures_from_nodes_handles_skipped_heading_levels(monkeypatch):
+    # h3 directly under h1, with no h2 in between, should still attach to h1
+    code = "# H1\n\n### H3\n"
+    tree_dict = _make_markdown_tree_dict(monkeypatch, code)
+    fake_view = types.SimpleNamespace(buffer_id=lambda: 1)
+
+    captures = api.get_captures_from_nodes([tree_dict["tree"].root_node], fake_view, _resolve_query_s(tree_dict))
+    by_text = {c["node"].text: c for c in captures}
+
+    assert [b["node"].text for b in by_text[b"H3"]["breadcrumbs"]] == [b"H1"]
+
+
+def test_get_captures_from_nodes_sorts_results_by_buffer_position(monkeypatch):
+    """
+    Results come from several trees (the outer markdown one, plus one injected tree per fenced code block), resolved
+    and appended in whatever order `get_captures_from_injections` recurses through them - so they need an explicit
+    sort to end up in the order a goto-symbol quick panel should list them: the order they appear in the buffer.
+    """
+    tree_dict = _make_markdown_tree_dict(monkeypatch)
+    fake_view = types.SimpleNamespace(buffer_id=lambda: 1)
+
+    captures = api.get_captures_from_nodes([tree_dict["tree"].root_node], fake_view, _resolve_query_s(tree_dict))
+    start_bytes = [c["node"].start_byte for c in captures]
+
+    assert start_bytes == sorted(start_bytes)
+    # Sanity-check this isn't trivially true because there's only one capture per tree: "Doc" (the heading) comes
+    # first, then the two symbols from the injected Python tree, then the injected Go function
+    by_text = {c["node"].text: c for c in captures}
+    assert [t for t in (b"Doc", b"Greeter", b"greet") if t in by_text] == [b"Doc", b"Greeter", b"greet"]
+
+
+def test_get_captures_from_nodes_scopes_injection_search_to_the_given_node(monkeypatch):
+    """
+    Passing a specific node (rather than the buffer's root) only searches injections *underneath* that node - here,
+    the Python fenced code block - not every injection in the whole document.
+    """
+    tree_dict = _make_markdown_tree_dict(monkeypatch)
+    fake_view = types.SimpleNamespace(buffer_id=lambda: 1)
+
+    python_block = next(
+        not_none(n) for n, _ in api.walk_tree(tree_dict["tree"].root_node) if not_none(n).type == "fenced_code_block"
+    )
+
+    captures = api.get_captures_from_nodes([python_block], fake_view, _resolve_query_s(tree_dict))
+    by_text = {c["node"].text: c for c in captures}
+
+    assert by_text[b"Greeter"]["name"] == "definition.class"
+    assert by_text[b"greet"]["name"] == "definition.function"
+    assert b"Add" not in by_text  # go's fenced block is a sibling, not underneath the python one
+    assert b"Doc" not in by_text  # neither is the outer heading
+
+
+def test_get_capture_kind_for_headings():
+    import sublime
+
+    for level in range(1, 7):
+        kind = api.get_capture_kind(f"definition.h{level}")
+        assert kind[0] == sublime.KindId.MARKUP

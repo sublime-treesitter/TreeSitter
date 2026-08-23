@@ -54,6 +54,7 @@ def _install_sublime_stubs():
         COLOR_DARK = "color_dark"
         COLOR_ORANGISH = "color_orangish"
         FUNCTION = "function"
+        MARKUP = "markup"
         TYPE = "type"
         VARIABLE = "variable"
 

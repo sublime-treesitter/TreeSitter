@@ -117,7 +117,7 @@ class MyTreeSitterListener(sublime_plugin.EventListener):
 
 Some languages embed others, e.g. Python in a Markdown fenced code block, JS/CSS in an HTML `<script>`/`<style>` tag, or Markdown's own inline content (implemented as two languages, `markdown` and `markdown_inline`, joined by an injection). `TreeSitter` discovers and parses these using each grammar's own bundled `injections.scm` via `tree_sitter_language_pack.get_injections_query`. This is the same mechanism editors like Neovim and Helix use. See `core.compute_injections`.
 
-`get_node_spanning_region` and everything built on it (select ancestor/sibling/descendant, show node under selection) descends into injected trees. `get_cousins` doesn't, because "same depth, same type" only means something within one grammar. Goto/select symbol also search every injected tree (see `get_all_captures`), resolving a query per injected language the same way as the buffer's own top-level language. A symbol found inside an injected tree only gets breadcrumbs from within that tree, never stitched to the outer document's structure.
+`get_node_spanning_region` and everything built on it (select ancestor/sibling/descendant, show node under selection) descends into injected trees. `get_cousins` doesn't, because "same depth, same type" only means something within one grammar. Goto/select symbol also search every injected tree (see `get_captures_from_nodes`), resolving a query per injected language the same way as the buffer's own top-level language. A symbol found inside an injected tree only gets breadcrumbs from within that tree, never stitched to the outer document's structure.
 
 ## Limitations
 

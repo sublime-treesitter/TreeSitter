@@ -1,5 +1,8 @@
 {
   "*": {
-    ">=4205": []
+    ">=4205": [
+      "tree-sitter",
+      "tree-sitter-language-pack"
+    ]
   }
 }

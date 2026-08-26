@@ -47,7 +47,6 @@ import sublime_plugin
 from sublime import View
 
 from .utils import (
-    DEPS_PATH,
     LIB_PATH,
     SETTINGS_FILENAME,
     ScopeType,
@@ -87,8 +86,8 @@ BUFFER_ID_TO_TREE: dict[int, TreeDict] = {}
 
 # These need to be added to plugin host's `sys.path` before other plugins that depend on them load, and before
 # `tree_sitter`/`tree_sitter_language_pack` are imported
-add_path(str(LIB_PATH))
-add_path(str(DEPS_PATH))
+add_path(str(LIB_PATH))  # Path to code exported by this plugin, not to tree-sitter or tree-sitter-language-pack
+# To manage dependencies with uv instead of dependencies.json, add `add_path(str(DEPS_PATH))`
 
 
 class Injection(TypedDict):

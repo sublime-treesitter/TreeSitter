@@ -171,8 +171,7 @@ def instantiate_languages(only_downloaded: bool = False):
         from tree_sitter_language_pack import downloaded_languages, get_language
     except ImportError:
         log(
-            "`tree_sitter_language_pack` isn't installed: run `uv sync` from this plugin's directory, then run "
-            "`TreeSitter: Reload Plugin`",
+            "`tree_sitter_language_pack` isn't installed: Package Control should install it for you, after which you should restart Sublime Text",
             with_status=True,
         )
         return

@@ -11,11 +11,7 @@ It also has APIs with everything you need to build Sublime Text plugins for "str
 ## Installation
 
 - Install `TreeSitter` from Package Control
-- `TreeSitter` depends on [`tree_sitter`](https://github.com/tree-sitter/py-tree-sitter) and [`tree_sitter_language_pack`](https://github.com/xberg-io/tree-sitter-language-pack), which aren't installed as Package Control ["dependencies"](https://packagecontrol.io/docs/dependencies) yet (that requires a PR against [the Package Control channel](https://github.com/packagecontrol/channel)). Until then, install them yourself:
-    - Install [`uv`](https://docs.astral.sh/uv/getting-started/installation/)
-    - Run `uv sync` from this plugin's directory (`Preferences: Browse Packages`, then `TreeSitter`)
-    - Run `TreeSitter: Reload Plugin` from the command palette
-    - If `tree_sitter_language_pack` still isn't importable, `TreeSitter` logs a status bar message telling you to redo this step
+- Restart Sublime Text `tree_sitter` and `tree_sitter_language_pack` deps are installed
 
 ### Installed languages
 

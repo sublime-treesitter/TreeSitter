@@ -17,9 +17,11 @@ LIB_PATH = PROJECT_ROOT / "src" / "lib"
 
 def get_deps_path() -> Path:
     """
-    Third-party dependencies (`tree_sitter`, `tree_sitter_language_pack`) aren't installed as Package Control
-    "dependencies" yet, see README. Instead they're installed with `uv sync` into this plugin's own `.venv`, and this
-    path (the `.venv`'s `site-packages`) is added to the Sublime plugin host's `sys.path` at load time.
+    For development only.
+
+    Third-party dependencies (`tree_sitter`, `tree_sitter_language_pack`) are installed as Package Control dependencies,
+    but, for development, they can also be installed using `uv sync` into this plugin's own .venv, and this path (the
+    `.venv`'s `site-packages`) can be added to the Sublime plugin host's `sys.path` at load time with `add_path`.
     """
     venv = PROJECT_ROOT / ".venv"
     if os.name == "nt":

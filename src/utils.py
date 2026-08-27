@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, TypedDict, TypeVar, cast
+from typing import TYPE_CHECKING, TypedDict, TypeVar, cast
 
 import sublime
 
@@ -73,61 +73,11 @@ class SettingsDict(TypedDict):
     file_ignore_patterns: NotRequired[list[str]]
 
 
-ScopeType = Literal[
-    "source.python",
-    "source.ts",
-    "source.ts.unittest",
-    "source.tsx",
-    "source.tsx.unittest",
-    "source.js",
-    "source.jsx",
-    "source.css",
-    "source.scss",
-    "source.go",
-    "source.rust",
-    "source.lua",
-    "source.ruby",
-    "source.java",
-    "source.php",
-    "embedding.php",
-    "text.html.php",
-    "source.zig",
-    "source.c",
-    "source.c++",
-    "source.cs",
-    "source.scala",
-    "source.toml",
-    "source.yaml",
-    "source.json",
-    "source.jsonl",
-    "source.shell",
-    "source.Kotlin",
-    "source.julia",
-    "source.haskell",
-    "source.clojure",
-    "source.elixir",
-    "source.sql",
-    "source.scheme",
-    "text.html.vue",
-    "text.html.svelte",
-    "text.html.basic",
-    "text.html.markdown",
-    "text.xml",
-    "source.erlang",
-    "source.makefile",
-    "source.dockerfile",
-    "source.elm",
-    "source.perl",
-    "source.objc",
-    "source.r",
-    "text.restructuredtext",
-    "source.ocaml",
-    "source.regexp",
-    "text.tex.latex",
-    "source.hcl",
-    "source.terraform",
-    "source.hack",
-]
+# A Sublime Text scope, e.g. `"source.python"` (a view's base scope) - just `str`, not a `Literal` of every scope this
+# plugin happens to have a mapping for in `SCOPE_TO_LANGUAGE_NAME`: that mapping is meant to be extended freely (by
+# this plugin and by users, via the `scope_to_language_name` setting), and a `Literal` would need editing every time
+# it grows, for no real type-safety benefit (scopes always originate as plain strings from the Sublime API).
+type ScopeType = str
 
 SCOPE_TO_LANGUAGE_NAME: dict[ScopeType, str] = {
     "source.python": "python",
@@ -183,6 +133,37 @@ SCOPE_TO_LANGUAGE_NAME: dict[ScopeType, str] = {
     "source.hcl": "hcl",
     "source.terraform": "terraform",
     "source.hack": "hack",
+    # Scopes below are for syntaxes that ship with Sublime Text out of the box (as opposed to the ones above this
+    # comment; some of those are default scopes, and some are not). This isn't an exhaustive list of default syntaxes,
+    # and `scope_to_language_name` in settings can always extend it, but it's worth keeping reasonably complete, since
+    # these scopes are stable (unlike scopes in community packages, which are at the whim of their maintainers).
+    "source.actionscript": "actionscript",
+    "source.applescript": "applescript",
+    "source.dosbatch": "batch",
+    "source.d": "d",
+    "source.diff": "diff",
+    "source.diff.basic": "diff",
+    "source.dot": "dot",
+    "source.groovy": "groovy",
+    "source.lisp": "commonlisp",
+    "source.matlab": "matlab",
+    "source.tcl": "tcl",
+    "text.tex": "latex",
+    "text.xml.dtd": "dtd",
+    "text.bibtex": "bibtex",
+    "text.git.attributes": "gitattributes",
+    "text.git.commit": "gitcommit",
+    "text.git.commit-message": "gitcommit",
+    "text.git.config": "git_config",
+    "text.git.ignore": "gitignore",
+    "text.git.rebase": "git_rebase",
+    "text.haml": "haml",
+    "source.shell.bash": "bash",
+    "source.shell.zsh": "zsh",
+    "source.regexp.basic": "regex",
+    "source.sql.basic": "sql",
+    "source.clojure.clojurescript": "clojure",
+    "source.java-props": "properties",
 }
 
 SCOPE_TO_QUERIES_NAME: dict[ScopeType, str] = {

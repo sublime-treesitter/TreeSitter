@@ -163,9 +163,15 @@ def on_load():
 
 def instantiate_languages(only_downloaded: bool = False):
     """
-    Instantiate `Language`s with `tree_sitter_language_pack`, and put them in `SCOPE_TO_LANGUAGE`. `get_language`
-    downloads and caches a language's precompiled parser the first time it's called, so this can block on network I/O;
-    pass `only_downloaded=True` to skip languages not already cached on disk, e.g. when calling from the main thread.
+    Instantiate `Language`s with `tree_sitter_language_pack`, and put them in `SCOPE_TO_LANGUAGE` for every scope
+    `name` maps to, if any. `get_language` downloads and caches a language's precompiled parser the first time it's
+    called, so this can block on network I/O; pass `only_downloaded=True` to skip languages not already cached on
+    disk, e.g. when calling from the main thread.
+
+    A name in `installed_languages` needn't map to any scope: `tree_sitter_language_pack` supports many more
+    languages than this plugin has scope mappings for (see `TreeSitterSelectLanguageMixin`), and installing one of
+    those is still meaningful - it downloads and caches the parser, e.g. so it's ready the moment it's needed for an
+    injection, rather than fetched on first use.
     """
     try:
         from tree_sitter_language_pack import downloaded_languages, get_language
@@ -182,11 +188,11 @@ def instantiate_languages(only_downloaded: bool = False):
     cached_language_names = set(downloaded_languages()) if only_downloaded else None
 
     for name in set(language_names):
-        if name not in language_name_to_scopes:
-            continue
+        scopes = language_name_to_scopes.get(name, [])
 
-        # We've already instantiated this language, no need to do it again
-        if all(scope in SCOPE_TO_LANGUAGE for scope in language_name_to_scopes[name]):
+        # We've already instantiated this language for every scope it maps to, no need to do it again. A name with no
+        # scopes is never "already instantiated" this way - fetching it again is a cheap no-op once it's cached.
+        if scopes and all(scope in SCOPE_TO_LANGUAGE for scope in scopes):
             continue
 
         if cached_language_names is not None and name not in cached_language_names:
@@ -198,7 +204,7 @@ def instantiate_languages(only_downloaded: bool = False):
             log(f'"{name}" language not available from tree_sitter_language_pack, read more at {PROJECT_REPO}: {e}')
             continue
 
-        for scope in language_name_to_scopes[name]:
+        for scope in scopes:
             SCOPE_TO_LANGUAGE[scope] = language
 
 
@@ -797,8 +803,31 @@ class TreeSitterTextChangeListener(sublime_plugin.TextChangeListener):
 #
 
 
-def get_instantiated_language_names() -> set[str]:
-    return {get_scope_to_language_name(mutable_settings.d)[scope] for scope in SCOPE_TO_LANGUAGE}
+def get_all_language_names() -> list[str]:
+    """
+    Every language name `tree_sitter_language_pack` can download and parse (~370), not just the ones this plugin
+    happens to have a scope mapping for in `SCOPE_TO_LANGUAGE_NAME`: any of them is installable, e.g. to pre-cache a
+    parser that's only ever going to be used via an injection, with no Sublime scope of its own.
+    """
+    from tree_sitter_language_pack import manifest_languages
+
+    return manifest_languages()
+
+
+def get_downloaded_language_names() -> set[str]:
+    from tree_sitter_language_pack import downloaded_languages
+
+    return set(downloaded_languages())
+
+
+def get_installed_language_names() -> set[str]:
+    """
+    Names in `installed_languages` that are also downloaded/cached on disk, i.e. actually usable right now without a
+    network fetch. Checking the disk cache alone isn't enough: `remove_language` deliberately doesn't touch it (see
+    its docstring), so a language removed from settings would otherwise still look installed forever after.
+    """
+    installed = set(get_settings_dict()["installed_languages"])
+    return installed & get_downloaded_language_names()
 
 
 def remove_language(language: str):
@@ -815,11 +844,12 @@ class TreeSitterSelectLanguageMixin:
 
     def run(self, **kwargs):
         """
-        Allow user to select from installed and uninstalled languages in quick panel. Render language for the active
-        view's scope as first option.
+        Allow user to select from every language `tree_sitter_language_pack` supports, downloaded or not - not just
+        the ones this plugin has a scope mapping for, since all of them are installable. Render language for the
+        active view's scope as first option.
         """
-        available_languages = sorted(get_language_name_to_scopes(mutable_settings.d).keys())
-        instantiated_languages = get_instantiated_language_names()
+        available_languages = sorted(get_all_language_names())
+        installed_languages = get_installed_language_names()
 
         view = self.window.active_view()
         scope = get_scope(view) if view else None
@@ -833,7 +863,7 @@ class TreeSitterSelectLanguageMixin:
         self.languages = available_languages
 
         def get_option(language: str):
-            prefix = "✅" if language in instantiated_languages else "❌"
+            prefix = "✅" if language in installed_languages else "❌"
             return f"{prefix}        {language}"
 
         self.window.show_quick_panel([get_option(lang) for lang in self.languages], self.on_select)

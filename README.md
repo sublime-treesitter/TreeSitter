@@ -105,15 +105,15 @@ class MyTreeSitterListener(sublime_plugin.EventListener):
 
 ### Languages
 
-`TreeSitter` gets language parsers from [`tree_sitter_language_pack`](https://github.com/xberg-io/tree-sitter-language-pack), which bundles ~370 languages. It downloads and caches the precompiled parser for a language the first time it's used (this can take a moment and needs network access), then reuses the cached copy from then on.
+`TreeSitter` gets language parsers from [`tree_sitter_language_pack`](https://github.com/xberg-io/tree-sitter-language-pack), which bundles ~370 languages. It downloads and caches the precompiled parser for a language the first time it's used (this can take a moment and needs network access), and reuses the cached copy from then on.
 
-`SCOPE_TO_LANGUAGE_NAME` in [`src/utils.py`](./src/utils.py) only maps a curated subset of these languages to Sublime scopes out of the box. To add a scope for a language `tree_sitter_language_pack` supports but this plugin doesn't map yet, add it to `scope_to_language_name` in `TreeSitter: Settings`. Your mapping is merged with the default mapping.
+`SCOPE_TO_LANGUAGE_NAME` in [`src/utils.py`](./src/utils.py) only maps a curated subset of these languages to Sublime scopes out of the box. To add a scope for a language supported by `tree_sitter_language_pack` but not mapped by default by this plugin, add it to `scope_to_language_name` in `TreeSitter: Settings`. Your mapping is merged with the default mapping.
 
 #### Nested languages (injections)
 
 Some languages embed others, e.g. Python in a Markdown fenced code block, JS/CSS in an HTML `<script>`/`<style>` tag, or Markdown's own inline content (implemented as two languages, `markdown` and `markdown_inline`, joined by an injection). `TreeSitter` discovers and parses these using each grammar's own bundled `injections.scm` via `tree_sitter_language_pack.get_injections_query`. This is the same mechanism editors like Neovim and Helix use. See `core.compute_injections`.
 
-`get_node_spanning_region` and everything built on it (select ancestor/sibling/descendant, show node under selection) descends into injected trees. `get_cousins` doesn't, because "same depth, same type" only means something within one grammar. Goto/select symbol also search every injected tree (see `get_captures_from_nodes`), resolving a query per injected language the same way as the buffer's own top-level language. A symbol found inside an injected tree only gets breadcrumbs from within that tree, never stitched to the outer document's structure.
+`get_node_spanning_region` and everything built on it (select ancestor/sibling/descendant, show node under selection) descends into injected trees. `get_cousins` doesn't, because "same depth, same type" only means something within one grammar. Goto/select symbol also search every injected tree (see `get_captures_from_nodes`), resolving a query per injected language the same way as the buffer's own top-level language. A symbol found inside an injected tree only gets breadcrumbs from within that tree, and is never stitched to the outer document's structure.
 
 ## Limitations
 

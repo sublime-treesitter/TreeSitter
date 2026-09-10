@@ -775,6 +775,8 @@ class TreeSitterTextChangeListener(sublime_plugin.TextChangeListener):
             Note that some language parsers are so slow they visibly affect UI thread performance. Setting a
             `debounce_ms` for these languages is recommended.
             """
+            cb_start_s = time.monotonic()
+
             tree_dict = BUFFER_ID_TO_TREE.get(buffer_id)
             scope_changed = bool(tree_dict) and tree_dict["scope"] != scope
 
@@ -782,8 +784,13 @@ class TreeSitterTextChangeListener(sublime_plugin.TextChangeListener):
                 dt_s = (time.monotonic() - self.last_text_changed_s) * 1000
                 if dt_s < debounce_ms:
                     return
+                op = "parse"
+                parse_start_s = time.monotonic()
                 tree = parse(self.parser, scope, s=view_text)
+                parse_ms = (time.monotonic() - parse_start_s) * 1000
             else:
+                op = "edit"
+                parse_start_s = time.monotonic()
                 tree = edit(
                     self.parser,
                     scope,
@@ -793,10 +800,21 @@ class TreeSitterTextChangeListener(sublime_plugin.TextChangeListener):
                     new_s=view_text,
                     debug=self.debug,
                 )
+                parse_ms = (time.monotonic() - parse_start_s) * 1000
 
+            make_tree_dict_start_s = time.monotonic()
             BUFFER_ID_TO_TREE[buffer_id] = make_tree_dict(tree, view_text, scope)
+            make_tree_dict_ms = (time.monotonic() - make_tree_dict_start_s) * 1000
+
             trim_cached_trees()
             publish_tree_update(view.window(), buffer_id=buffer_id, scope=scope)
+
+            if self.debug:
+                total_ms = (time.monotonic() - cb_start_s) * 1000
+                log(
+                    f"{op} {scope} ({len(view_text)} chars): "
+                    f"{op}={parse_ms:.1f}ms make_tree_dict={make_tree_dict_ms:.1f}ms total={total_ms:.1f}ms"
+                )
 
         sublime.set_timeout_async(callback=cb, delay=debounce_ms + 1 if debounce_ms > 0 else 0)
 

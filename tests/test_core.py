@@ -192,3 +192,140 @@ def test_edit_deletion_updates_tree_incrementally():
     params = new_tree.root_node.child(0).child_by_field_name("parameters")
     assert params is not None
     assert params.named_child_count == 0
+
+
+class _FakeSyntax:
+    scope = "source.python"
+
+
+class _FakeView:
+    """Minimal stand-in for `sublime.View`, mutated between `on_text_changed` calls like a real buffer would be."""
+
+    def __init__(self, text: str):
+        self.text = text
+
+    def size(self):
+        return len(self.text)
+
+    def substr(self, region):
+        return self.text[region.begin() : region.end()]
+
+    def syntax(self):
+        return _FakeSyntax()
+
+    def file_name(self):
+        return None
+
+    def window(self):
+        return None
+
+
+class _FakeBuffer:
+    def __init__(self, view: _FakeView, buffer_id: int):
+        self.view = view
+        self.buffer_id = buffer_id
+
+    def primary_view(self):
+        return self.view
+
+    def id(self):
+        return self.buffer_id
+
+
+def test_text_change_listener_coalesces_stale_callbacks(monkeypatch):
+    """
+    Regression test for typing outpacing parsing: ST queues every text change's callback on one FIFO async thread, so
+    if the parser can't keep up, several callbacks can pile up behind the most recent one. `on_text_changed` should
+    collapse this - every scheduled callback except the freshest is a no-op, and the freshest one alone runs a single
+    `edit()` that incorporates every change accumulated since the last one that actually ran.
+    """
+    import sublime
+
+    scheduled_cbs = []
+    monkeypatch.setattr(
+        sublime, "set_timeout_async", lambda callback, delay=0: scheduled_cbs.append(callback), raising=False
+    )
+
+    buffer_id = -1  # distinct from any buffer id used by other tests
+    s0 = "def f():\n    pass\n"
+    s1 = "def f(x):\n    pass\n"
+    s2 = "def f(xy):\n    pass\n"
+    s3 = "def f(xyz):\n    pass\n"
+
+    view = _FakeView(s0)
+    listener = core.TreeSitterTextChangeListener()
+    listener.buffer = _FakeBuffer(view, buffer_id)  # type: ignore[assignment]
+    listener.debug = True  # force `edit`'s "changes replay to new_s" assertion to actually run
+
+    parser = Parser()
+    core.BUFFER_ID_TO_TREE[buffer_id] = core.make_tree_dict(
+        core.parse(parser, "source.python", s0), s0, "source.python"
+    )
+
+    # Three keystrokes "fire" (main thread) before the async thread has run any of their callbacks - each inserts one
+    # more character right after "def f(": "x", then "y", then "z"
+    changes = [
+        _text_change(a_pt=6, b_pt=6, a_row=0, a_col=6, b_row=0, b_col=6, len_utf8=0, s="x"),
+        _text_change(a_pt=7, b_pt=7, a_row=0, a_col=7, b_row=0, b_col=7, len_utf8=0, s="y"),
+        _text_change(a_pt=8, b_pt=8, a_row=0, a_col=8, b_row=0, b_col=8, len_utf8=0, s="z"),
+    ]
+    for change, text in zip(changes, [s1, s2, s3]):
+        view.text = text
+        listener.on_text_changed([change])
+
+    assert len(scheduled_cbs) == 3
+    assert listener.generation == 3
+
+    # The two stale callbacks (for "x" and "y") must no-op: no change to the cached tree, nothing drained yet
+    scheduled_cbs[0]()
+    assert core.BUFFER_ID_TO_TREE[buffer_id]["s"] == s0
+    scheduled_cbs[1]()
+    assert core.BUFFER_ID_TO_TREE[buffer_id]["s"] == s0
+    assert listener.pending_changes == changes
+
+    # The freshest callback (for "z") does the real work, applying all three accumulated changes in one `edit()`
+    scheduled_cbs[2]()
+    tree_dict = core.BUFFER_ID_TO_TREE[buffer_id]
+    assert tree_dict["s"] == s3
+    assert not tree_dict["tree"].root_node.has_error
+    assert listener.pending_changes == []
+
+    params = tree_dict["tree"].root_node.child(0).child_by_field_name("parameters")
+    assert params is not None
+    assert params.named_children[0].text == b"xyz"
+
+
+def test_text_change_listener_logs_slow_parse_even_without_debug(monkeypatch):
+    """
+    A `parse`/`edit` call slow enough to affect UI performance should be logged even when `debug` is off: `debug` logs
+    every single text change, which is too noisy to leave on by default, but a slow parse is worth surfacing on its
+    own so a user knows to reach for `language_name_to_debounce_ms` or `TreeSitter: Remove Language`.
+    """
+    import sublime
+
+    monkeypatch.setattr(sublime, "set_timeout_async", lambda callback, delay=0: callback(), raising=False)
+    monkeypatch.setattr(core, "SLOW_PARSE_MS", -1)  # any parse/edit "exceeds" this
+
+    logged = []
+    monkeypatch.setattr(core, "log", lambda *args, **kwargs: logged.append((args, kwargs)))
+
+    buffer_id = -2  # distinct from any buffer id used by other tests
+    s0 = "x = 1\n"
+    view = _FakeView(s0)
+    listener = core.TreeSitterTextChangeListener()
+    listener.buffer = _FakeBuffer(view, buffer_id)  # type: ignore[assignment]
+    assert listener.debug is False
+
+    parser = Parser()
+    core.BUFFER_ID_TO_TREE[buffer_id] = core.make_tree_dict(
+        core.parse(parser, "source.python", s0), s0, "source.python"
+    )
+
+    view.text = "x = 12\n"
+    change = _text_change(a_pt=5, b_pt=5, a_row=0, a_col=5, b_row=0, b_col=5, len_utf8=0, s="2")
+    listener.on_text_changed([change])
+
+    assert len(logged) == 1
+    (message, *_rest), kwargs = logged[0]
+    assert "took" in message
+    assert kwargs.get("with_status") is True

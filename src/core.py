@@ -39,7 +39,7 @@ from __future__ import annotations
 import re
 import time
 from dataclasses import dataclass
-from threading import Thread
+from threading import Lock, Thread
 from typing import TYPE_CHECKING, TypedDict, cast
 
 import sublime
@@ -79,6 +79,11 @@ mutable_settings = MutableSettings(d=None)
 PROJECT_REPO = "https://github.com/sublime-treesitter/TreeSitter"
 
 MAX_CACHED_TREES = 16
+
+# Above this, a single `parse`/`edit` call is slow enough to obviously affect UI thread performance, so it's worth
+# logging unconditionally (not just when `debug` is on); it's the signal that a language/grammar/input combination
+# needs `language_name_to_debounce_ms`, or that the language should be removed with `TreeSitter: Remove Language`.
+SLOW_PARSE_MS = 100
 SCOPE_TO_LANGUAGE: dict[ScopeType, Language] = {}
 
 # LRU cache, dict of `(buffer_id, syntax)` tuple keys pointing to dict with tree instance and other metadata.
@@ -736,6 +741,11 @@ class TreeSitterTextChangeListener(sublime_plugin.TextChangeListener):
         self.debounce_ms: int | None = None
         self.last_text_changed_s = 0
         self.debug = get_debug(mutable_settings.d)
+        # Guards `generation` and `pending_changes`, written from the main thread in `on_text_changed` and read/drained
+        # from the async thread in `cb` - see `cb`'s docstring.
+        self.lock = Lock()
+        self.generation = 0
+        self.pending_changes: list[sublime.TextChange] = []
         super().__init__(*args, **kwargs)
 
     @property
@@ -763,6 +773,11 @@ class TreeSitterTextChangeListener(sublime_plugin.TextChangeListener):
         self.last_text_changed_s = time.monotonic()
         debounce_ms = self.debounce_ms or 0
 
+        with self.lock:
+            self.pending_changes.extend(changes)
+            self.generation += 1
+            generation = self.generation
+
         def cb():
             """
             Calling `get_view_text()` in `on_text_changed_async` doesn't always return view text right after the edit
@@ -772,18 +787,34 @@ class TreeSitterTextChangeListener(sublime_plugin.TextChangeListener):
             a "background job" with `set_timeout_async` to parse the new tree. This works because `set_timeout_async`
             uses the same queue as the other `_async` methods.
 
-            Note that some language parsers are so slow they visibly affect UI thread performance. Setting a
-            `debounce_ms` for these languages is recommended.
+            Typing can outpace parsing: ST queues every text change's callback on the same FIFO async thread, so a
+            burst of keystrokes can queue up many slow edit/parse calls in a row, each working on a buffer state
+            that's already stale by the time its turn comes up. `generation` guards against this - only the callback
+            scheduled by the *last* text change queued so far gets to actually parse.
+
+            `debounce_ms` is a separate, complementary knob: even with no backlog (parsing keeping up with typing), it
+            delays reparsing until typing has paused, for languages/inputs slow enough that reparsing on every single
+            keystroke is itself too slow. Note this no longer requires a full `parse()`: `pending_changes` accumulates
+            every change since the last successful parse/edit, even across several skipped/debounced callbacks, so an
+            incremental `edit()` using all of them is just as correct.
             """
+            if debounce_ms > 0:
+                dt_s = (time.monotonic() - self.last_text_changed_s) * 1000
+                if dt_s < debounce_ms:
+                    return
+
+            with self.lock:
+                if generation != self.generation:
+                    return
+                pending_changes = self.pending_changes
+                self.pending_changes = []
+
             cb_start_s = time.monotonic()
 
             tree_dict = BUFFER_ID_TO_TREE.get(buffer_id)
             scope_changed = bool(tree_dict) and tree_dict["scope"] != scope
 
-            if not tree_dict or debounce_ms > 0 or scope_changed:
-                dt_s = (time.monotonic() - self.last_text_changed_s) * 1000
-                if dt_s < debounce_ms:
-                    return
+            if not tree_dict or scope_changed:
                 op = "parse"
                 parse_start_s = time.monotonic()
                 tree = parse(self.parser, scope, s=view_text)
@@ -794,7 +825,7 @@ class TreeSitterTextChangeListener(sublime_plugin.TextChangeListener):
                 tree = edit(
                     self.parser,
                     scope,
-                    changes,
+                    pending_changes,
                     tree_dict["tree"],
                     s=tree_dict["s"],
                     new_s=view_text,
@@ -812,8 +843,17 @@ class TreeSitterTextChangeListener(sublime_plugin.TextChangeListener):
             if self.debug:
                 total_ms = (time.monotonic() - cb_start_s) * 1000
                 log(
-                    f"{op} {scope} ({len(view_text)} chars): "
+                    f"{op} {scope} ({len(view_text)} chars, {len(pending_changes)} pending changes): "
                     f"{op}={parse_ms:.1f}ms make_tree_dict={make_tree_dict_ms:.1f}ms total={total_ms:.1f}ms"
+                )
+            elif parse_ms > SLOW_PARSE_MS:
+                # Logged even without `debug`: this is the signal a user needs to notice a language/input is slow enough
+                # to affect UI responsiveness, and reach for `language_name_to_debounce_ms`; deliberately doesn't guess
+                # why it's slow (e.g. "syntax errors") - that isn't a reliable signal (a large buffer can be slow to
+                # parse whether or not it's valid).
+                log(
+                    f"{op}, for {len(view_text)} chars with scope `{scope}`, took {parse_ms:.0f}ms (> {SLOW_PARSE_MS}ms), which may affect UI performance; consider setting language_name_to_debounce_ms for this language, or removing it",
+                    with_status=True,
                 )
 
         sublime.set_timeout_async(callback=cb, delay=debounce_ms + 1 if debounce_ms > 0 else 0)

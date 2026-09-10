@@ -35,7 +35,7 @@ def test_get_all_language_names_includes_languages_without_scope_mapping():
     from src.utils import SCOPE_TO_LANGUAGE_NAME
 
     names = core.get_all_language_names()
-    assert len(names) > 300  # tree_sitter_language_pack supports ~370 languages
+    assert len(names) > 300  # tree_sitter_language_pack supports hundreds of languages
     assert set(SCOPE_TO_LANGUAGE_NAME.values()) < set(names)  # this plugin only maps a curated subset
     assert "elisp" in names  # a language with no Sublime scope mapping at all, still installable
 
@@ -68,7 +68,7 @@ def test_get_installed_language_names_excludes_removed_but_still_cached_language
 def test_select_language_mixin_lists_every_tree_sitter_language_pack_language():
     """
     Regression test: the language picker used to only list languages this plugin has a Sublime scope mapping for
-    (`SCOPE_TO_LANGUAGE_NAME`, a few dozen), even though `tree_sitter_language_pack` can install any of its ~370
+    (`SCOPE_TO_LANGUAGE_NAME`, a few dozen), even though `tree_sitter_language_pack` can install any of its hundreds of
     languages regardless of whether this plugin maps a scope to it.
     """
 

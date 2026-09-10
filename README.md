@@ -105,7 +105,7 @@ class MyTreeSitterListener(sublime_plugin.EventListener):
 
 ### Languages
 
-`TreeSitter` gets language parsers from [`tree_sitter_language_pack`](https://github.com/xberg-io/tree-sitter-language-pack), which bundles ~370 languages. It downloads and caches the precompiled parser for a language the first time it's used (this can take a moment and needs network access), and reuses the cached copy from then on.
+`TreeSitter` gets language parsers from [`tree_sitter_language_pack`](https://github.com/xberg-io/tree-sitter-language-pack), which bundles hundreds of languages. It downloads and caches the precompiled parser for a language the first time it's used (this can take a moment and needs network access), and reuses the cached copy from then on.
 
 `SCOPE_TO_LANGUAGE_NAME` in [`src/utils.py`](./src/utils.py) only maps a curated subset of these languages to Sublime scopes out of the box. To add a scope for a language supported by `tree_sitter_language_pack` but not mapped by default by this plugin, add it to `scope_to_language_name` in `TreeSitter: Settings`. Your mapping is merged with the default mapping.
 

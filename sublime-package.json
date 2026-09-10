@@ -10,7 +10,7 @@
               "items": {
                 "type": "string"
               },
-              "markdownDescription": "Which Sublime scopes TreeSitter actively parses and tracks, not which languages are available: `tree_sitter_language_pack` can fetch and cache any of its ~370 languages on demand regardless of this list. Run `TreeSitter: Install Language` / `TreeSitter: Remove Language` to manage this list"
+              "markdownDescription": "Which Sublime scopes TreeSitter actively parses and tracks, not which languages are available: `tree_sitter_language_pack` can fetch and cache any of its hundreds of languages on demand regardless of this list. Run `TreeSitter: Install Language` / `TreeSitter: Remove Language` to manage this list"
             },
             "scope_to_language_name": {
               "type": "object",

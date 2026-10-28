@@ -793,9 +793,9 @@ class TreeSitterTextChangeListener(sublime_plugin.TextChangeListener):
             scheduled by the *last* text change queued so far gets to actually parse.
 
             `debounce_ms` is a separate, complementary knob: even with no backlog (parsing keeping up with typing), it
-            delays reparsing until typing has paused, for languages/inputs slow enough that reparsing on every single
-            keystroke is itself too slow. Note this no longer requires a full `parse()`: `pending_changes` accumulates
-            every change since the last successful parse/edit, even across several skipped/debounced callbacks, so an
+            delays reparsing until typing has paused, for languages/inputs slow enough that reparsing on every
+            keystroke is too slow. Note this doesn't require a full `parse()`: `pending_changes` accumulates every
+            change since the last successful parse/edit, even across several skipped/debounced callbacks, so an
             incremental `edit()` using all of them is just as correct.
             """
             if debounce_ms > 0:
